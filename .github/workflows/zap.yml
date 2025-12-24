@@ -1,0 +1,19 @@
+name: DAST Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  zap_scan:
+    runs-on: ubuntu-latest
+    name: Scaneando a aplicação
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: ZAP Scan
+        uses: zaproxy/action-full-scan@v0.13.0
+        with:
+          target: 'https://heitorgouvea.me/'

@@ -1,0 +1,16 @@
+_site
+*._
+._*
+.sass-cache
+.asset-cache
+.jekyll_cache/
+.jekyll_cache
+.idea
+*.DS_Store
+*node_modules/
+# Block credentials
+public/payloads/.aws/
+**/.aws/
+**/credentials
+**/config
+
