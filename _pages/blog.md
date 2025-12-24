@@ -1,6 +1,6 @@
 ---
 layout: page
-title: Blog
+title: Blog | Jabir Hussain
 permalink: /blog/
 ---
 
