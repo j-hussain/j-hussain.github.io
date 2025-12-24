@@ -1,13 +1,18 @@
 ---
 layout: page
-title: About | Heitor Gouvêa - Security Researcher
+title: About | Jabir Hussain
 og_image: https://heitorgouvea.me/images/photos/section.jpg
 permalink: /about
-description: Research focus of Gouvêa is vulnerability discovery in applications/services and exploit development
+description: Research focus of Hussain is in progress
 ---
 
 ## About
 
-Security Researcher based in São Paulo (🇧🇷) with Software Engineering background and 8+ years of experience in the offensive security industry. Research focus of Gouvêa is vulnerability discovery in applications/services and exploit development - was reported vulnerabilities to amazing companies like Activision, Nubank, Oracle, D-Link and other companies not as famous, but as incredible as.
+Postgraduate student at the University of Warwick🇧(🇬🇧) with a background in scientific computing and applied machine learning. I am particularly interested in interpretability/alignment, uncertainty, and AI for Science, with long-term goals in research-oriented roles or a PhD.
 
-During this journey, Gouvêa share some of research notes [on your blog;](/)
+If you're interested in:
+* [Projects I have worked on](/)
+* [My MSc notes](/notes/)
+* [My perspectives on different topics](/blog/)
+
+If you want to get in touch with me, you can reach me at [jabir01hussain at gmail dot com](mailto:jabir01hussain@gmail.com).

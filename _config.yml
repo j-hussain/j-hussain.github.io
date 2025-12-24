@@ -22,3 +22,8 @@ plugins:
   - jekyll-sitemap
 
 google_analytics: G-VHN1CKT5Q3
+
+collections:
+  notes:
+    output: true
+    permalink: /notes/:path/
