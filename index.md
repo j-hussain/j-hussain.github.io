@@ -1,12 +1,10 @@
 ---
 layout: page
-title: Home | Heitor Gouvêa - Security Researcher
+title: Home | Jabir Hussain - Research
 og_image: https://heitorgouvea.me/images/photos/section.jpg
 permalink: /
-description: Security Researcher based in São Paulo (🇧🇷) with Software Engineering background and 8+ years of experience in the offensive security industry.
+description: Personal research website of Jabir Hussain.
 ---
-
-## Publications
 
 ## Publications
 

@@ -1,16 +1,16 @@
 <footer class="c-page__footer">
 	<hr>
 	<p>
-		{% if site.twitter_username %}
-			<a target="_blank" href="https://twitter.com/{{ site.twitter_username }}">Twitter</a>
+		{% if site.linkedin_username %}
+		<a target="_blank" href="https://linkedin.com/in/{{ site.linkedin_username }}">LinkedIn</a>
 		{% endif %}
 		<span class="u-separate"></span>
 		{% if site.github_username %}
-			<a target="_blank" href="https://github.com/{{ site.github_username }}">Github</a>
+		<a target="_blank" href="https://github.com/{{ site.github_username }}">Github</a>
 		{% endif %}
 	</p>
 </footer>
 
 {% include googleanalytics.html %}
 
-<script src="{{ "/js/main.js" | prepend: site.baseurl }}"></script>
+<script src="{{ " /js/main.js" | prepend: site.baseurl }}"></script>
