@@ -3,9 +3,6 @@ layout: page
 title: "Week 4: Monte Carlo toolkit: LLN, vanilla MC, MCMC, and Kalman filtering"
 ---
 
-```markdown
-# ES98A Fundamentals of Predictive Modelling
-
 ## Week 4 — Monte Carlo methods
 
 ### Monte Carlo methods
@@ -36,13 +33,14 @@ $$
 
 ### Unbiasedness and LLN
 
-Note that $\hat{Q}_J(f)$ is itself a r.v. and it is an **unbiased estimator** of $Q(f)$:
 $$
+\begin{aligned}
 \mathbb{E}\!\left[\hat{Q}_J(f)\right]
-= \mathbb{E}\!\left[\frac{1}{J}\sum_{j=1}^J f(x_j)\right]
-= \frac{1}{J}\sum_{j=1}^J \mathbb{E}[f(x_j)]
-= \frac{1}{J}\,J\,Q(f)
-= Q(f).
+&= \mathbb{E}\!\left[\frac{1}{J}\sum_{j=1}^J f(x_j)\right] \\
+&= \frac{1}{J}\sum_{j=1}^J \mathbb{E}[f(x_j)] \\
+&= \frac{1}{J}\,J\,Q(f) \\
+&= Q(f).
+\end{aligned}
 $$
 (since $x_1,\ldots,x_J$ have the same law)
 
@@ -89,7 +87,11 @@ $$
 
 But how can we apply the MC method if we cannot easily draw samples from $\mu$ / $\rho$. This spurs the Markov chain Monte Carlo (MCMC) methods we consider next.
 
-**Note** that because $\hat{Q}_J(f):=\frac{1}{J}\sum_{j=1}^J f(z_j)$ uses only the values $f(z_j)$ and does not care about the spacing of the nodes $z_j$, the performance of $\hat{Q}_J$ is robust to poor features of $f$ (roughness, high-dim domain, ...), but it is also unable to leverage any nice features of $f$ (e.g. smoothness).
+**Note** that because
+$$
+\hat{Q}_J(f):=\frac{1}{J}\sum_{j=1}^J f(z_j)
+$$
+uses only the values $f(z_j)$ and does not care about the spacing of the nodes $z_j$, the performance of $\hat{Q}_J$ is robust to poor features of $f$ (roughness, high-dim domain, ...), but it is also unable to leverage any nice features of $f$ (e.g. smoothness).
 $\to$ **quasi-Monte Carlo methods** try to have the best of both worlds.
 
 ### Markov chain Monte Carlo

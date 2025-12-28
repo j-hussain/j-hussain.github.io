@@ -75,12 +75,7 @@ $$
 A=\sum_{i=1}^r \sigma_i,(v_i\otimes u_i).
 $$
 
-Action on a vector $x\in\mathbb{K}^n$:
-$$
-Ax=\sum_{i=1}^r \sigma_i,(v_i\otimes u_i)x
-=\sum_{i=1}^r \sigma_i,u_i\langle v_i,x\rangle
-=\sum_{i=1}^r \sigma_i,u_i v_i^*x.
-$$
+Action on a vector $x\in\mathbb{K}^n$: $$ Ax=\sum_{i=1}^r \sigma_i,(v_i\otimes u_i)x \\ =\sum_{i=1}^r \sigma_i,u_i\langle v_i,x\rangle \\ =\sum_{i=1}^r \sigma_i,u_i v_i^*x.$$
 
 ### Remarks
 
@@ -162,18 +157,10 @@ $$
 
 ### Stability note
 
-Forward map is stable:
-$$
-|A(x+\delta x)-Ax|=|A(\delta x)|\le |A|_{\mathrm{op}}|\delta x|=\sigma_1|\delta x|.
-$$
+Forward map is stable: $$ |A(x+\delta x)-Ax|=|A(\delta x)|\le |A|_{\mathrm{op}}|\delta x|=\sigma_1|\delta x|. $$
 
 Inverse map can be unstable:
-$$
-|A^\dagger(b+\delta b)-A^\dagger b|
-=|A^\dagger(\delta b)|
-\le |A^\dagger|_{\mathrm{op}}|\delta b|
-=\frac{1}{\sigma_r}|\delta b|.
-$$
+$$ |A^\dagger(b+\delta b)-A^\dagger b| \\ =|A^\dagger(\delta b)| \\ \le |A^\dagger|_{\mathrm{op}}|\delta b| \\ =\frac{1}{\sigma_r}|\delta b|. $$
 
 Annotation: $\sigma_r^{-1}$ can be huge; reconstructions $A^\dagger b$ are sensitive to perturbations in $b$ parallel to singular vectors $u_i$ corresponding to small $\sigma_i$.
 
@@ -209,10 +196,7 @@ Slogan (as written): inverse/learning problems are typically ill-posed, sensitiv
 
 Two main meanings of $\mathbb{P}(E)$:
 
-1. **Frequentist:** idealised replicable experiment; on each run $E$ happens or not; define
-   $$
-   \mathbb{P}(E):=\lim_{n\to\infty}\frac{#{\text{times }E\text{ occurs in first }n\text{ trials}}}{n}.
-   $$
+1. **Frequentist:** idealised replicable experiment; on each run $E$ happens or not; define $$ \mathbb{P}(E):=\lim_{n\to\infty}\frac{{\text{Number of times }E\text{ occurs in first }n\text{ trials}}}{n}$$
 
 2. **Bayesian/subjectivist:** can speak of probability of any statement $E$, with $\mathbb{P}(E)=1$ meaning certainty true and $\mathbb{P}(E)=0$ certainty false.
 
@@ -228,14 +212,8 @@ $$
 \mathbb{P}(A\mid B):=\frac{\mathbb{P}(A\cap B)}{\mathbb{P}(B)}.
 $$
 
-Then
-$$
-\mathbb{P}(B\mid A)\mathbb{P}(A)=\mathbb{P}(A\cap B)=\mathbb{P}(A\mid B)\mathbb{P}(B),
-$$
-so
-$$
-\mathbb{P}(A\mid B)=\frac{\mathbb{P}(B\mid A)}{\mathbb{P}(B)},\mathbb{P}(A).
-$$
+Then $$ \mathbb{P}(B\mid A)\mathbb{P}(A)=\mathbb{P}(A\cap B)=\mathbb{P}(A\mid B)\mathbb{P}(B), $$
+so $$ \mathbb{P}(A\mid B)=\frac{\mathbb{P}(B\mid A)}{\mathbb{P}(B)},\mathbb{P}(A).$$
 
 Annotations:
 
@@ -250,9 +228,4 @@ A real-valued random variable is a function $x:\Omega\to\mathbb{R}$ defined on a
 
 A random vector is a measurable function $x:\Omega\to\mathbb{R}^n$, i.e. $x=(x_1,\dots,x_n)$ with each $x_i$ a random variable.
 
-The **law/distribution** of $x$ is the induced probability measure $\mu_x$ on $\mathbb{R}^n$:
-$$
-\mu_x(A):=\mathbb{P}({\omega\in\Omega: x(\omega)\in A})
-=\mathbb{P}[x\in A]
-=\mathbb{P}(x^{-1}(A)).
-$$
+The **law/distribution** of $x$ is the induced probability measure $\mu_x$ on $\mathbb{R}^n$: $$ \mu_x(A):=\mathbb{P}({\omega\in\Omega: x(\omega)\in A}) \\ =\mathbb{P}[x\in A] \\ =\mathbb{P}(x^{-1}(A)).$$

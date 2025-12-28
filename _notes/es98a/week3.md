@@ -68,12 +68,7 @@ $$
 A=\sum_{i=1}^r \sigma_i,(v_i\otimes u_i).
 $$
 
-Action on a vector $x\in\mathbb{K}^n$:
-$$
-Ax=\sum_{i=1}^r \sigma_i,(v_i\otimes u_i)x
-=\sum_{i=1}^r \sigma_i,u_i\langle v_i,x\rangle
-=\sum_{i=1}^r \sigma_i,u_i v_i^*x.
-$$
+Action on a vector $x\in\mathbb{K}^n$: $$ Ax=\sum_{i=1}^r \sigma_i,(v_i\otimes u_i)x \\ =\sum_{i=1}^r \sigma_i,u_i\langle v_i,x\rangle \\ =\sum_{i=1}^r \sigma_i,u_i v_i^*x.$$
 
 ### Remarks
 
@@ -115,11 +110,7 @@ What is $AA^*$?
 
 ## Least squares and normal equations
 
-Given $A\in\mathbb{K}^{m\times n}$ and $b\in\mathbb{K}^m$, consider the least squares problem: find $x\in\mathbb{K}^n$ minimising
-$$
-\Phi(x):=\frac{1}{2}|Ax-b|^2
-=\frac{1}{2}\sum_{j=1}^m |(Ax)_j-b_j|^2.
-$$
+Given $A\in\mathbb{K}^{m\times n}$ and $b\in\mathbb{K}^m$, consider the least squares problem: find $x\in\mathbb{K}^n$ minimising $$ \Phi(x):=\frac{1}{2}|Ax-b|^2 \\ =\frac{1}{2}\sum_{j=1}^m |(Ax)_j-b_j|^2. $$
 
 Gradient/Jacobian (as written):
 $$
@@ -261,36 +252,9 @@ if (equivalently)
 
 1. for every $\ell\in\mathbb{R}^n$, $\ell\cdot \underline{x}$ is a real-valued normally-distributed r.v. with mean $\ell\cdot m$ and variance $\ell^\top C\ell\ge 0$;
 
-2. the characteristic function
-   $$
-   \mathbb{R}^n \to \mathbb{C}
-   $$
-   $$
-   \ell \mapsto \mathbb{E}\!\left[\exp(i\,\ell\cdot \underline{x})\right]
-   $$
-   takes the form
-   $$
-   \mathbb{E}\!\left[\exp(i\,\ell\cdot \underline{x})\right]
-   =
-   \exp\!\left(i\,\ell\cdot m - \frac{1}{2}\,\ell^\top C\ell\right);
-   $$
+2. the characteristic function $\mathbb{R}^n \to \mathbb{C}$ $$\ell \mapsto \mathbb{E}\!\left[\exp(i\,\ell\cdot \underline{x})\right] $$ takes the form $$ \mathbb{E}\!\left[\exp(i\,\ell\cdot \underline{x})\right] \\ =\exp\!\left(i\,\ell\cdot m - \frac{1}{2}\,\ell^\top C\ell\right);$$
 
-3. **[Valid only if $C$ is SPD i.e. if $C^{-1}$ exists]** $\underline{x}$ has the PDF
-   $$
-   p_{\underline{x}}(x)
-   =
-   \frac{1}{\sqrt{\det(2\pi C)}}\,
-   \exp\!\left(-\frac{1}{2}\,\left\|C^{-1/2}(x-m)\right\|^2\right)
-   $$
-   i.e.
-   $$
-   \mathbb{P}[\underline{x}\in A]
-   =
-   \int_A
-   \frac{1}{\sqrt{\det(2\pi C)}}\,
-   \exp\!\left(-\frac{1}{2}\,\left\|C^{-1/2}(x-m)\right\|^2\right)\,dx,
-   \qquad A\subseteq \mathbb{R}^n.
-   $$
+3. **[Valid only if $C$ is SPD i.e. if $C^{-1}$ exists]** $\underline{x}$ has the PDF $$p_{\underline{x}}(x)= \frac{1}{\sqrt{\det(2\pi C)}}\, \exp\!\left(-\frac{1}{2}\,\left\|C^{-1/2}(x-m)\right\|^2\right) $$ i.e. $$ \mathbb{P}[\underline{x}\in A] = \int_A \frac{1}{\sqrt{\det(2\pi C)}}\, \exp\!\left(-\frac{1}{2}\,\left\|C^{-1/2}(x-m)\right\|^2\right)\,dx, \qquad A\subseteq \mathbb{R}^n.$$
 
 ## Linear images of Gaussians are again Gaussian!
 
@@ -302,52 +266,21 @@ in $\mathbb{R}^p$. Then $\underline{y}$ is a $\mathbb{R}^p$-valued Gaussian, and
 $$
 \underline{y}\sim\mathcal{N}(Am,ACA^\top).
 $$
-To see this:
-$$
-\mathbb{E}\!\left[\exp(i\,\ell\cdot \underline{y})\right]
-= \mathbb{E}\!\left[\exp\!\left(i\,\ell\cdot (A\underline{x})\right)\right]
-= \mathbb{E}\!\left[\exp\!\left(i\,(A^\top \ell)\cdot \underline{x}\right)\right],
-\qquad \ell\in\mathbb{R}^p,
-$$
-$$
-= \exp\!\left(i\,(A^\top \ell)\cdot m - \frac{1}{2}\,(A^\top \ell)^\top C (A^\top \ell)\right)
-= \exp\!\left(i\,\ell\cdot (Am) - \frac{1}{2}\,\ell^\top (ACA^\top)\ell\right).
-$$
+To see this: $$ \mathbb{E}\!\left[\exp(i\,\ell\cdot \underline{y})\right] \\ = \mathbb{E}\!\left[\exp\!\left(i\,\ell\cdot (A\underline{x})\right)\right] \\ = \mathbb{E}\!\left[\exp\!\left(i\,(A^\top \ell)\cdot \underline{x}\right)\right], \\ \qquad \ell\in\mathbb{R}^p,$$
+$$ = \exp\!\left(i\,(A^\top \ell)\cdot m - \frac{1}{2}\,(A^\top \ell)^\top C (A^\top \ell)\right) \\ = \exp\!\left(i\,\ell\cdot (Am) - \frac{1}{2}\,\ell^\top (ACA^\top)\ell\right). $$
 
 Another nice property of Gaussians is that their conditional distributions are Gaussian — and the conditional mean and cov. are easy to calculate using linear algebra.
 
 ## Conditioning theorem
 
-Let
-$$
-\underline{x}=\begin{pmatrix}\underline{x}_1\\ \underline{x}_2\end{pmatrix}
-$$
+Let $$ \underline{x}=\begin{pmatrix}\underline{x}_1\\ \underline{x}_2\end{pmatrix} $$
 be an $\mathbb{R}^n$-valued Gaussian, with $\underline{x}_1$ denoting the first $n_1$ components and $\underline{x}_2$ denoting the remaining $n_2$ components, $n_1+n_2=n$.
 
-Write the mean $m$ and cov. $C$ of $\underline{x}$ in block form as
-$$
-\mathbb{E}[\underline{x}] = m = \begin{pmatrix}m_1\\ m_2\end{pmatrix},
-\qquad
-\mathrm{Cov}[\underline{x}] = C =
-\begin{pmatrix}
-C_{11} & C_{12}\\
-C_{21} & C_{22}
-\end{pmatrix},
-$$
+Write the mean $m$ and cov. $C$ of $\underline{x}$ in block form as $$ \mathbb{E}[\underline{x}] = m = \begin{pmatrix}m_1\\ m_2\end{pmatrix}, \qquad \mathrm{Cov}[\underline{x}] = C = \begin{pmatrix} C_{11} & C_{12}\\ C_{21} & C_{22} \end{pmatrix}, $$
 with $m_1\in\mathbb{R}^{n_1}$, $m_2\in\mathbb{R}^{n_2}$, $C_{11}\in\mathbb{R}^{n_1\times n_1}$, $C_{12}=C_{21}^\top$, ...
 
-**Assume that $C$ and $C_{22}$ are invertible (generalizations are possible).** Then, for every $x_2\in\mathbb{R}^{n_2}$, $\underline{x}_1\,|\,\underline{x}_2=x_2$ is Gaussian,
-$$
-\underline{x}_1\,|\,\underline{x}_2=x_2 \sim \mathcal{N}(m_1',C_{11}'),
-$$
-where
-$$
-m_1' = m_1 + C_{12}C_{22}^{-1}(x_2-m_2),
-$$
-$$
-C_{11}' = C_{11} - C_{12}C_{22}^{-1}C_{21},
-\qquad (C_{21}=C_{12}^\top).
-$$
+**Assume that $C$ and $C_{22}$ are invertible (generalizations are possible).** Then, for every $x_2\in\mathbb{R}^{n_2}$, $\underline{x}_1\,|\,\underline{x}_2=x_2$ is Gaussian, $$ \underline{x}_1\,|\,\underline{x}_2=x_2 \sim \mathcal{N}(m_1',C_{11}'), $$
+where $$ m_1' = m_1 + C_{12}C_{22}^{-1}(x_2-m_2),$$ $$ C_{11}' = C_{11} - C_{12}C_{22}^{-1}C_{21}, \qquad (C_{21}=C_{12}^\top). $$
 
 **Kalman update formulae**
 - $m_1'$: posterior mean
