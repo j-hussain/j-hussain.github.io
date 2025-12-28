@@ -1,6 +1,6 @@
 ---
 layout: page
-title: "ES98A Week 2: Matrix Factorisations"
+title: "ES98A Week 2: Least squares meets probability: normal equations + multivariate distributions"
 ---
 
 ## Topics
