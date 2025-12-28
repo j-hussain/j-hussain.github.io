@@ -8,7 +8,7 @@ description: Research focus of Hussain is in progress
 
 ## About
 
-Postgraduate student at the University of Warwick🇧(🇬🇧) with a background in scientific computing and applied machine learning. I am particularly interested in interpretability/alignment, uncertainty, and AI for Science, with long-term goals in research-oriented roles or a PhD.
+Postgraduate student at the University of Warwick🇧(🇬🇧) with a background in scientific computing and applied machine learning. I am particularly interested in mechanistic interpretability, (mis)alignment and emergence, uncertainty, and AI for Science, with long-term goals in research-oriented roles or a PhD.
 
 If you're interested in:
 * [Projects I have worked on](/)
