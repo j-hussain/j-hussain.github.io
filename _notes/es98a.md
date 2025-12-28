@@ -1,3 +1,8 @@
+---
+layout: page
+title: "ES98A: Fundamentals of Predictive Modelling"
+---
+
 # ES98A — Fundamentals of Predictive Modelling (Week 1)
 
 
