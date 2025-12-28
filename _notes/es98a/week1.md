@@ -1,6 +1,6 @@
 ---
 layout: page
-title: "ES98A Week 1: Foundations: linear algebra + uncertainty propagation"
+title: "Week 1: Foundations: linear algebra + uncertainty propagation"
 ---
 
 ## Motivation and overview

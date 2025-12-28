@@ -1,6 +1,6 @@
 ---
 layout: page
-title: "ES98A Week 7: Random functions in full: covariance operators, stochastic processes, and KL expansions"
+title: "Week 7: Random functions in full: covariance operators, stochastic processes, and KL expansions"
 ---
 
 ## Topics
