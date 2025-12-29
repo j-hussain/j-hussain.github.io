@@ -73,7 +73,7 @@ Slogan (as written): inverse/learning problems are typically ill-posed, sensitiv
 
 Two main meanings of $\mathbb{P}(E)$:
 
-1. **Frequentist:** idealised replicable experiment; on each run $E$ happens or not; define $$\mathbb{P}(E):=\lim_{n\to\infty}\frac{{\text{Number of times }E\text{ occurs in first }n\text{ trials}}}{n}$$ 2. **Bayesian/subjectivist:** can speak of probability of any statement $E$, with $\mathbb{P}(E)=1$ meaning certainty true and $\mathbb{P}(E)=0$ certainty false.
+1. **Frequentist:** idealised replicable experiment; on each run $E$ happens or not; define $$\mathbb{P}(E):=\lim_{n\to\infty}\frac{\text{Number of times }E\text{ occurs in first }n\text{ trials}}{n}$$ 2. **Bayesian/subjectivist:** can speak of probability of any statement $E$, with $\mathbb{P}(E)=1$ meaning certainty true and $\mathbb{P}(E)=0$ certainty false.
 
 ### Aleatoric vs epistemic uncertainty
 
