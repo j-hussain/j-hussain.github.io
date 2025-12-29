@@ -110,3 +110,4 @@ Then the posterior/conditional dist’n $\mu_{u|y=y}$ exists and has a density w
 **Proof** The proof is mostly just checking that (B) satisfies the reconstruction law $$\mu_{(u,y)}(A\times B) = \int_B \mu_{u|y=y}(A),\mu_y(dy).$$
 
 Starting from the RHS, $$\int_B \mu_{u|y=y}(A),\mu_y(dy)=\int_B \mu_{u|y=y}(A),\rho_y(y),dy=\int_B\int_A 1;\mu_{u|y=y}(du);\rho_y(y),dy.$$ Under our claim (B) this becomes $$\int_B\int_A \frac{\rho_{y|u=u}(y)}{\rho_y(y)},\mu_0(du);\rho_y(y),dy = \int_A\int_B \rho_{y|u=u}(y),dy;\mu_0(du)=:\mu_{(u,y)}(A\times B).$$ $\square$
+ 
