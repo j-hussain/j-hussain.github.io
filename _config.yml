@@ -1,0 +1,29 @@
+title: Jabir Hussain
+description: "Personal website of Jabir Hussain."
+keywords: Jabir, Hussain, Research, Machine Learning, AI, Science
+author: Jabir Hussain
+baseurl: ""
+url: "" 
+
+linkedin_username: jabir-hussain
+github_username:  j-hussain
+donate: donate
+
+include: [_pages]
+exclude: ["README.md", "SECURITY.md", "LICENSE.md", "Gemfile", "Dockerfile"]
+
+markdown: kramdown
+permalink: /:year/:month/:day/:title
+
+sass:
+    style: compressed
+plugins:
+  - jemoji
+  - jekyll-sitemap
+
+google_analytics: G-VHN1CKT5Q3
+
+collections:
+  notes:
+    output: true
+    permalink: /notes/:path/
