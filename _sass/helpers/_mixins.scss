@@ -9,8 +9,8 @@
     }
 }
 
-@mixin ff--sans-serif($font-weight: normal) {
-    font-family: 'Lucida', monospace;
+@mixin ff--serif($font-weight: normal) {
+    font-family: 'Lyon Text', Georgia, serif;
     font-weight: $font-weight;
 }
 
