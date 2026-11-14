@@ -118,7 +118,7 @@ test("all twenty animation views remain useful without JavaScript", async ({ bro
 test("development gallery compiles all twenty working animation examples", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    expect((await page.goto("/notes/es98a/animations"))?.status()).toBe(200);
+    expect((await page.goto("http://localhost:3000/notes/es98a/animations"))?.status()).toBe(200);
     await expect(page.locator("[data-es98a-animation]")).toHaveCount(20);
     const ids = await page.locator("[id]").evaluateAll((els) => els.map((e) => e.id));
     expect(new Set(ids).size).toBe(ids.length);

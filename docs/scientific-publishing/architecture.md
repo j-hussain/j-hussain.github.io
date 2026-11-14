@@ -70,6 +70,8 @@ Use the Node/npm setup (`package.json` requires Node ≥20.9; CI uses Node 24); 
 
 Playwright uses two workers, Chromium desktop 1440×1000 and emulated-touch mobile 390×844; tests also exercise narrower/wider viewports. It reuses or starts development on **3000** and starts production on **3001** with reuse disabled. Several tests hard-code 3001. Do not run four copies, silently reuse another worktree's server or assume environment variables parameterise these ports. See [parallel testing rules](parallel-workflow.md#test-and-build-ownership).
 
+The aggregate suite uses production port 3001 for public pages and explicit development URLs on port 3000 for the two private galleries. Its 120-second per-test budget accommodates multi-chapter visual and animation sweeps; tests may declare their own larger budgets. This keeps development compilation out of public-page interaction checks while still exercising the actual development-only gallery.
+
 CI (`.github/workflows/ci.yml`) installs with npm ci on Node 24, runs lint/format/types/build/numerical tests, installs Chromium and runs Playwright. It is not a deployment workflow. Local success does not establish a remote CI result.
 
 `artifacts/`, Playwright results and `.next/` are ignored outputs. A worktree made from HEAD does not include uncommitted/untracked framework files: establish a reviewed baseline before parallel branching. The current checkout contains extensive pre-existing migration changes; do not use blanket staging or cleanup to manufacture a clean baseline.

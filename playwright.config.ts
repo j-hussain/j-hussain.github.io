@@ -2,7 +2,8 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
     testDir: "./tests/browser",
     workers: 2,
-    use: { baseURL: "http://localhost:3000" },
+    timeout: 120_000,
+    use: { baseURL: "http://localhost:3001" },
     webServer: [
         { command: "npm run dev", url: "http://localhost:3000", reuseExistingServer: true },
         { command: "npm run start -- --port 3001", url: "http://localhost:3001", reuseExistingServer: false },

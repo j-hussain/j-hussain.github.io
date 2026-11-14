@@ -51,7 +51,7 @@ test("gallery uses real MDX, definitions and footnote backlinks", async ({ page 
         if (message.type() === "error" && /hydrat|cannot be a descendant/i.test(message.text()))
             errors.push(message.text());
     });
-    await page.goto("/dev/scientific-components");
+    await page.goto("http://localhost:3000/dev/scientific-components");
     const term = page.getByRole("button", { name: "condition number" });
     await term.focus();
     await expect(page.getByRole("tooltip")).toBeVisible();
