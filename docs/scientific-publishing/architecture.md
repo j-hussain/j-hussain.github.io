@@ -59,7 +59,7 @@ Display equations scroll inside their own block. No-JavaScript figures use the s
 | Command                                         | Actual scope                                                                                                     |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `npm run dev`                                   | Next development server, default 3000                                                                            |
-| `npm run test:math`                             | **Only** `tests/scientific-math.test.ts`, via tsx/node:test; new files are not automatically included            |
+| `npm run test:math`                             | Baseline `tests/scientific-math.test.ts` and module `tests/scientific/*/*.test.ts`, via tsx/node:test            |
 | `npm run lint` / `npx tsc --noEmit`             | Repository ESLint / TypeScript                                                                                   |
 | `npx prettier --check <explicit changed files>` | Scoped formatting. `npm run format:check` checks the whole repo; avoid broad write-formatting during scoped work |
 | `npm run build`                                 | Production compilation/prerendering, not mathematical proof or visual inspection                                 |
@@ -73,3 +73,11 @@ Playwright uses two workers, Chromium desktop 1440×1000 and emulated-touch mobi
 CI (`.github/workflows/ci.yml`) installs with npm ci on Node 24, runs lint/format/types/build/numerical tests, installs Chromium and runs Playwright. It is not a deployment workflow. Local success does not establish a remote CI result.
 
 `artifacts/`, Playwright results and `.next/` are ignored outputs. A worktree made from HEAD does not include uncommitted/untracked framework files: establish a reviewed baseline before parallel branching. The current checkout contains extensive pre-existing migration changes; do not use blanket staging or cleanup to manufacture a clean baseline.
+
+## Repository integration follow-up: 14 November 2026
+
+The shared numerical command now includes the baseline and every current module test matching `tests/scientific/*/*.test.ts` (115 tests at integration). Earlier module handoffs describing baseline-only discovery are historical. Deeper test-directory nesting needs an explicit discovery update.
+
+ESLint excludes generated `artifacts/` and legacy Ruby `vendor/` dependencies. Prettier excludes generated outputs, vendor dependencies, the lockfile and verbatim `source-viva.md` snapshots. The source snapshots remain unchanged.
+
+The incomplete legacy `/projects` routes now redirect to the existing `/work` placeholder. Their original gallery implementation is retained in `docs/archive/project-gallery`; the missing project-data file was not reconstructed. This does not change the notes pipeline or its reusable component APIs.

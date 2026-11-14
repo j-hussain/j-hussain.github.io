@@ -32,7 +32,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <html lang="en" suppressHydrationWarning>
             <body
                 className={`${fontGeistMono.variable} ${fontGeistSans.variable} scroll-smooth overflow-x-clip bg-background text-foreground`}
-                style={{ "--font-inter": "Arial, sans-serif", "--font-playfair-display": "Georgia, serif" } as React.CSSProperties}
+                style={
+                    {
+                        "--font-inter": "Arial, sans-serif",
+                        "--font-playfair-display": "Georgia, serif",
+                    } as React.CSSProperties
+                }
             >
                 <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="theme">
                     <PostHogInitializer>{children}</PostHogInitializer>

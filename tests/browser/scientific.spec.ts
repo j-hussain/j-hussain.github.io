@@ -103,4 +103,9 @@ test("narrow layouts, touch and existing routes", async ({ page }) => {
     }
     for (const route of ["/", "/work", "/notes"])
         expect((await page.goto(route, { waitUntil: "domcontentloaded" }))?.status()).toBe(200);
+    for (const route of ["/projects", "/projects/legacy-project"]) {
+        await page.goto(route);
+        await expect(page).toHaveURL(/\/work$/);
+        await expect(page.locator("main")).toContainText("coming soon.");
+    }
 });

@@ -17,10 +17,10 @@ export function ProjectionExplorer() {
             title="One vector, two changing measurements"
             caption={
                 <>
-                    Solid ink: fixed vector {calibration ? "y = (2, 3)" : "x = (2, 1)"}. Teal: its first
-                    projection. Dashed segment: what that projection misses. Rotate the orthonormal rulers, then reveal
-                    the second component. Both axes use the same fixed scale. The calibration preset returns here later
-                    in the argument.
+                    Solid ink: fixed vector {calibration ? "y = (2, 3)" : "x = (2, 1)"}. Teal: its first projection.
+                    Dashed segment: what that projection misses. Rotate the orthonormal rulers, then reveal the second
+                    component. Both axes use the same fixed scale. The calibration preset returns here later in the
+                    argument.
                 </>
             }
         >

@@ -1,0 +1,11 @@
+.next/
+out/
+build/
+artifacts/
+test-results/
+playwright-report/
+vendor/
+next-env.d.ts
+package-lock.json
+# Retain verbatim lecture-source snapshots for editorial comparisons.
+docs/scientific-publishing/modules/*/source-viva.md

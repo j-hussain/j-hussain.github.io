@@ -5,7 +5,7 @@ title: "ES98E: Scientific Machine Learning"
 
 > With four parameters I can fit an elephant, and with five I can make him wiggle his trunk.
 >
-> *John von Neumann*
+> _John von Neumann_
 
 An expensive simulator, a small dataset and a known physical law offer different kinds of information. Scientific machine learning asks how to combine them: which parameters matter, which functions should be learnable, and what uncertainty remains after fitting?
 

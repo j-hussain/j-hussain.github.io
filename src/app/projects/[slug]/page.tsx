@@ -1,35 +1,5 @@
-import { notFound } from "next/navigation";
-import { projects } from "../../data/projects";
-import ProjectPage from "./project-page";
+import { redirect } from "next/navigation";
 
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-    return projects.filter((p) => p.page).map((p) => ({ slug: p.slug }));
-}
-
-type Props = { params: Promise<{ slug: string }> };
-
-export async function generateMetadata({ params }: Props) {
-    const { slug } = await params;
-    const project = projects.find((p) => p.slug === slug);
-    if (!project?.page) return {};
-    const { tagline, share } = project.page;
-    return {
-        title: project.name,
-        description: tagline,
-        openGraph: {
-            title: project.name,
-            description: tagline,
-            ...(share && { images: [{ url: share, width: 1200, height: 630 }] }),
-        },
-        twitter: { card: "summary_large_image", title: project.name, description: tagline },
-    };
-}
-
-export default async function Page({ params }: Props) {
-    const { slug } = await params;
-    const project = projects.find((p) => p.slug === slug && p.page);
-    if (!project) notFound();
-    return <ProjectPage slug={project.slug} />;
+export default function Page() {
+    redirect("/work");
 }

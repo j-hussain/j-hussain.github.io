@@ -6,7 +6,7 @@
         "node": ">=20.9.0"
     },
     "scripts": {
-        "test:math": "tsx --test tests/scientific-math.test.ts",
+        "test:math": "tsx --test tests/scientific-math.test.ts tests/scientific/*/*.test.ts",
         "test:browser": "npm run build && playwright test",
         "dev": "next dev",
         "build": "next build",
