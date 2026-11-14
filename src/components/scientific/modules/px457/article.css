@@ -1,0 +1,161 @@
+/* PX457 contains extensive source listings and API tables. Keep their horizontal
+   scrolling local until the shared owner considers a general code/table rule. */
+.scientific-article.px457-article h3[id] {
+    scroll-margin-top: 100px;
+}
+.px457-contents blockquote {
+    margin: 1.5rem 0 2rem;
+    padding-left: 1.2rem;
+    border-left: 2px solid var(--sci-accent);
+    font-style: italic;
+}
+.px457-contents blockquote p:last-child {
+    margin-top: 0.7rem;
+    font-size: 0.85rem;
+    font-style: normal;
+}
+.scientific-article.px457-article pre {
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.8rem 0;
+    font:
+        0.84rem/1.7 var(--font-geist-mono),
+        monospace;
+}
+.scientific-article.px457-article table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    font-size: 0.94rem;
+}
+.scientific-article.px457-article th,
+.scientific-article.px457-article td {
+    padding: 0.5rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* Module-only animated explanations reuse Figure, ink/paper and semantic colours. */
+.scientific-article.px457-article .pxa-experiment {
+    margin: 3.5rem 0;
+    scroll-margin-top: 100px;
+}
+.px457-article .pxa-prompt {
+    max-width: 36rem;
+}
+.px457-article .pxa-comparison {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 1rem 0 0.5rem;
+}
+.px457-article .pxa-comparison button {
+    min-height: 44px;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 3px;
+    background: transparent;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    text-align: left;
+}
+.px457-article .pxa-comparison button[aria-pressed="true"] {
+    border-color: var(--sci-accent);
+    background: color-mix(in srgb, var(--sci-accent) 9%, transparent);
+    color: var(--sci-accent);
+}
+.px457-article .pxa-experiment button:focus-visible,
+.px457-article .pxa-experiment input:focus-visible {
+    outline: 2px solid var(--sci-accent);
+    outline-offset: 4px;
+}
+.px457-article .pxa-canvas {
+    display: block;
+    width: 100%;
+    max-width: 580px;
+    height: auto;
+    margin: 1rem auto;
+    overflow: visible;
+}
+.px457-article .pxa-canvas text {
+    font-family: var(--font-geist-sans), sans-serif;
+}
+.px457-article .pxa-readout {
+    min-height: 9.2rem;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+.px457-article .pxa-readout p {
+    margin: 0.45rem 0;
+}
+.px457-article .pxa-equation {
+    font-family: var(--font-geist-mono), monospace;
+    color: var(--sci-accent);
+    font-size: 0.82rem;
+    overflow-wrap: anywhere;
+}
+.px457-article .pxa-playback {
+    margin: 0.9rem 0 1.4rem;
+}
+.px457-article .pxa-playback .sci-controls {
+    gap: 0.5rem;
+    margin: 0.8rem 0;
+}
+.px457-article .pxa-playback button {
+    min-height: 44px;
+    font-size: 0.82rem;
+}
+.px457-article .pxa-timeline {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr) 2.8rem;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 44px;
+    font-size: 0.8rem;
+}
+.px457-article .pxa-timeline input {
+    width: 100%;
+    height: 44px;
+    min-width: 0;
+    accent-color: var(--sci-accent);
+    cursor: pointer;
+}
+.px457-article .pxa-timeline > :last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.px457-article .pxa-motion-note {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    opacity: 0.7;
+    margin: 0.3rem 0;
+}
+.px457-article .pxa-announcement {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+@media (max-width: 480px) {
+    .px457-article .pxa-comparison button {
+        flex: 1 1 42%;
+        font-size: 0.77rem;
+        padding: 0.5rem;
+    }
+    .px457-article .pxa-readout {
+        min-height: 11rem;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .px457-article .pxa-experiment * {
+        scroll-behavior: auto;
+        transition: none;
+        animation: none;
+    }
+}

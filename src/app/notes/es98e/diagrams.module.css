@@ -1,0 +1,11 @@
+.content svg[data-es98e-diagram] {
+    display: block;
+    width: 100%;
+    max-width: 480px;
+    height: auto;
+    margin: 1rem auto;
+}
+
+.content figure[id] {
+    scroll-margin-top: 100px;
+}

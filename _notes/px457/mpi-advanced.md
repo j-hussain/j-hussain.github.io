@@ -1,274 +1,143 @@
 ---
 layout: page
-title: "MPI: Advanced MPI"
+title: "MPI: Nonblocking Communication and Hybrid Programs"
 ---
 
-### *MPI-05: Advanced MPI*
+A stencil's interior needs only locally owned values. Its boundary needs the [halo values](/notes/px457/mpi-communicators#geometry) from neighbouring ranks. Waiting for the halo before computing **any** point introduces an unnecessary dependency. Nonblocking communication lets the program express the actual dependency: only boundary updates must wait.
 
----
+<h2 id="overlap">1. Overlap is a schedule with a buffer-lifetime proof</h2>
 
-## Conceptual Focus
-
-This lecture is about **performance realism** in distributed-memory codes:
-
-1. **Non-blocking point-to-point communication** to *overlap* halo exchange with computation (hide latency).
-2. **Hybrid OpenMP/MPI** to match the structure of modern clusters (shared-memory nodes connected by a network).
-3. What MPI enables, what it costs, and what the course is intentionally not covering.
-
----
-
-# 1) Non-blocking Communication
-
-## 1.1 Motivation: halo exchange in domain decomposition
-
-In the domain decomposition picture, boundary elements need fresh halo values before boundary updates. A naïve iteration does:
-
-1. send boundary → neighbours
-2. receive halo ← neighbours
-3. update all elements
-
-That is correct, but it can **stall**: processes wait doing no compute while messages traverse the network.
-
----
-
-## 1.2 Latency-hiding algorithm (the key idea)
-
-The lecture proposes an alternative per-iteration schedule:
-
-1. initiate sends (boundary → neighbours)
-2. initiate receives (halo ← neighbours)
-3. compute **interior** updates (don't need halo)
-4. wait for send completion
-5. wait for receive completion
-6. compute **boundary** updates (now halo available)
-
-This is the standard "overlap comms with compute" pattern.
-
----
-
-## 1.3 Blocking send modes recap
-
-Completion conditions:
-
-| Function | Completion condition / behaviour |
-| --- | --- |
-| `MPI_Send` | implementation chooses buffered vs synchronous |
-| `MPI_Ssend` | completes when data received/acknowledged by target |
-| `MPI_Bsend` | completes when data copied into a comms buffer |
-
-### Buffered send requires explicit buffer management
-
-MPI requires you to supply and attach a buffer:
+For a two-buffer stencil, let `old` remain unchanged during the step and write results into distinct `next`. Post receives into separate ghost storage, post sends of old boundary data, compute independent interior points, complete requests, then compute boundary points.
 
 ```c
-int s1;
-MPI_Pack_size(n, MPI_DOUBLE, MPI_COMM_WORLD, &s1);
-
-double *b = malloc(s1 + MPI_BSEND_OVERHEAD);
-MPI_Buffer_attach(b, s1 + MPI_BSEND_OVERHEAD);
-
-/* ... MPI_Bsend ... */
-
-MPI_Buffer_detach(&b, &s1);
-free(b);
+/* One neighbour shown. Tags and peers must match remotely.
+   Buffers are disjoint; old_face stays unchanged during the exchange. */
+MPI_Request req[2];
+MPI_Irecv(halo, n, MPI_DOUBLE, src, 10, comm, &req[0]);
+MPI_Isend(old_face, n, MPI_DOUBLE, dst, 10, comm, &req[1]);
+update_interior(old, next);
+MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
+update_boundary(old, halo, next);
 ```
 
-Pragmatically for PX457: you usually prefer `MPI_Isend`/`MPI_Irecv` + waits, rather than relying on `MPI_Bsend`.
+For a two-dimensional stencil, post each required face receive and send before waiting; use distinct requests and correct direction/tag conventions. Posting receives first often helps the implementation place incoming data directly, although nonblocking sends can be posted first if the overall matching schedule is sound. Complete sends before modifying or swapping away their source storage.
 
----
+Between initiation and completion, the application must not modify a send buffer; reading immutable send data is allowed. It must not access a receive buffer while MPI may write it. Those lifetime rules, documented for [nonblocking sends](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Isend.3.html), explain why an in-place stencil is harder to overlap safely than a two-buffer stencil.
 
-## 1.4 Non-blocking send/recv API
+<Figure id="px457-overlap" title="Remove the interior's unnecessary wait" caption="A teaching schedule with communication cost 4 and independent interior work 6, in arbitrary time units. Serial phases take 10 before boundary work; ideal overlap takes 6. The lower timeline assumes sufficient communication progress while computation runs, which must be verified for the MPI implementation.">
+<svg viewBox="0 0 360 200" role="img" aria-label="Serial schedule communication four units then interior six units; overlap schedule communication and interior start together and finish after six units" style={{width: "100%", height: "auto"}}>
+<g fill="currentColor" fontSize="13"><text x="10" y="23">wait first: 4 + 6 = 10</text><text x="10" y="104">overlap: max(4, 6) = 6</text></g>
+<g fill="var(--sci-accent)" fillOpacity="0.25" stroke="currentColor"><rect x="20" y="35" width="120" height="30"/><rect x="20" y="115" width="120" height="28"/></g>
+<g fill="none" stroke="currentColor" strokeDasharray="4 3"><rect x="140" y="35" width="180" height="30"/><rect x="20" y="148" width="180" height="28"/></g>
+<g fill="currentColor" fontSize="12"><text x="30" y="55">communication</text><text x="185" y="55">interior</text><text x="30" y="134">communication</text><text x="80" y="167">interior</text><text x="20" y="195">0</text><text x="190" y="195">6</text><text x="310" y="195">10</text></g>
+</svg>
+</Figure>
 
-Non-blocking variants:
+In an ideal overlap model,
 
-| Function | Completion condition / notes |
-| --- | --- |
-| `MPI_Isend` | like `MPI_Send` but returns immediately |
-| `MPI_Issend` | like `MPI_Ssend` but returns immediately |
-| `MPI_Ibsend` | like `MPI_Bsend` but returns immediately |
-| `MPI_Irecv` | non-blocking receive |
+$$
+T_{\mathrm{step}}\approx T_{\mathrm{post}}+
+\max(T_{\mathrm{comm}},T_{\mathrm{interior}})+T_{\mathrm{boundary}}.
+$$
 
-### Requests: how you track an outstanding operation
+Without overlap, the maximum becomes a sum. This states the opportunity, not a guaranteed speedup: progress can depend on MPI calls, progress threads, network offload and resource contention. `MPI_Test`/`Testall`/`Testany` poll requests; `Wait`/`Waitall`/`Waitany` wait for completion. Polling too often can cost more than it saves. A latency-dominated small message and a bandwidth-dominated large message require different interpretations of the [alpha–beta model](/notes/px457/mpi-communicators#collective-cost).
 
-Non-blocking calls return a **request handle**:
+Only the boundary requires the incoming halo. Let communication and independent work share the timeline, keeping the boundary dependency visible.
+
+<PX457Animation scene="overlap" />
+
+### Why not always use a buffered send?
+
+`MPI_Bsend` uses an attached user-supplied buffer. For one outstanding message, a traditional setup is:
 
 ```c
-MPI_Request send_req, recv_req;
-
-MPI_Isend(sendbuf, n, MPI_DOUBLE, dest, stag, MPI_COMM_WORLD, &send_req);
-MPI_Irecv(recvbuf, n, MPI_DOUBLE, srce, rtag, MPI_COMM_WORLD, &recv_req);
+int packed, attached_bytes;
+void *buffer;
+MPI_Pack_size(n, MPI_DOUBLE, comm, &packed);
+attached_bytes = packed + MPI_BSEND_OVERHEAD;
+buffer = malloc((size_t)attached_bytes);
+if (buffer == NULL) MPI_Abort(comm, 1);
+MPI_Buffer_attach(buffer, attached_bytes);
+/* MPI_Bsend(...): ensure enough space for all outstanding messages. */
+MPI_Buffer_detach(&buffer, &attached_bytes);
+free(buffer);
 ```
 
----
+Assume byte-count addition fits `int` and include `stdlib.h`. Several pending messages need corresponding aggregate space and overhead, not this one-message bound. Detaching can wait until buffered data no longer needs the buffer. Nonblocking standard sends usually express lifetime and overlap more directly; neither approach removes matching obligations. `MPI_Ssend` completion means the matching receive has begun receiving, not necessarily that its caller has returned.
 
-## 1.5 Waiting and status
+<h2 id="hybrid">2. Hybrid reduction composes two ownership levels</h2>
 
-You complete non-blocking ops with `MPI_Wait`:
+A node contains shared-memory cores, while nodes communicate across an interconnect. Fewer MPI ranks, each with OpenMP threads, can reduce duplicated state and change network communication. It can also introduce thread overhead, NUMA effects or weaker locality. Pure MPI and hybrid decompositions should be compared, not ranked universally.
 
-```c
-MPI_Status recv_status;
-
-MPI_Wait(&send_req, MPI_STATUS_IGNORE);
-MPI_Wait(&recv_req, &recv_status);
-```
-
-Critical rule (explicit in lecture):
-
-- Between `MPI_I*` and the matching `MPI_Wait`, **you must not touch** the send or receive buffer.
-    - Send: don't overwrite `sendbuf` until wait completes.
-    - Receive: don't read `recvbuf` until wait completes.
-
-Useful variants:
-
-- `MPI_Waitall`, `MPI_Waitany` for arrays of requests
-- `MPI_Test`, `MPI_Testall`, `MPI_Testany` to poll completion (avoid blocking)
-
-Status fields remain the same as blocking receives: `MPI_SOURCE`, `MPI_TAG`, `MPI_ERROR`.
-
----
-
-## 1.6 Why it helps: latency dominates
-
-The lecture's performance statement: MPI transfer cost is typically dominated by **latency** (time-to-send a zero-sized message), not by the byte transmission itself.
-
-So the win comes from:
-
-- doing enough interior computation while messages are "in flight" to **hide** some/all latency
-- improving surface-to-volume ratio: subdomains with **small boundary** (communication) relative to **volume** (compute) benefit more
-
----
-
-# 2) Hybrid OpenMP/MPI
-
-## 2.1 Motivation: clusters of shared-memory nodes
-
-Most supercomputers are "MPI between nodes, OpenMP within node." The Avon example: ~48 cores per node, shared memory per node, plus a high-speed network between nodes.
-
-Problem: too many MPI tasks per node can contend for network resources.
-
-Solution: fewer MPI ranks (often 1 per node or a small number), each using OpenMP threads for intra-node parallelism.
-
----
-
-## 2.2 Thread support: `MPI_Init_thread`
-
-Hybrid programs must ask MPI what level of thread support it provides:
+Request an MPI thread-support level and check that the **provided** level is sufficient:
 
 ```c
-int required = MPI_THREAD_FUNNELED;
 int provided;
-
-MPI_Init_thread(&argc, &argv, required, &provided);
-if (provided != required) {
-    printf("Required thread support unavailable!\n");
+MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
+if (provided < MPI_THREAD_FUNNELED)
     MPI_Abort(MPI_COMM_WORLD, 1);
-}
 ```
 
-Thread levels:
+The standard levels are ordered:
 
-- `MPI_THREAD_SINGLE`: no threading
-- `MPI_THREAD_FUNNELED`: only the master thread makes MPI calls (common, pragmatic)
-- `MPI_THREAD_SERIALIZED`: any thread may call MPI, but only one at a time
-- `MPI_THREAD_MULTIPLE`: fully thread-safe MPI calls from any thread
+| Level                   | Contract                                                            |
+| ----------------------- | ------------------------------------------------------------------- |
+| `MPI_THREAD_SINGLE`     | Only one thread executes                                            |
+| `MPI_THREAD_FUNNELED`   | Multiple threads, but only the thread that initialised MPI calls it |
+| `MPI_THREAD_SERIALIZED` | Multiple threads may call MPI, never concurrently                   |
+| `MPI_THREAD_MULTIPLE`   | Multiple threads may call MPI concurrently                          |
 
-For PX457-style hybrid jobs, **FUNNELED** is usually the intended assumption: do OpenMP work, exit parallel region, then do MPI calls.
+A stronger provided level is acceptable; testing `provided != required` would reject it incorrectly. Under FUNNELED, an arbitrary OpenMP `single` thread is insufficient because it need not be the initialising thread. The simple course pattern returns to that thread outside the parallel region before MPI calls. See [MPI thread initialisation](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Init_thread.3.html).
 
----
-
-## 2.3 Example: OpenMP reduction + MPI reduction (funneled)
-
-Lecture example: OpenMP reduces into `a`, then MPI reduces across ranks into `b`.
+The source's reduction example illustrates the composition:
 
 ```c
 int a = 0, b = 0;
-
-#pragma omp parallel default(shared) reduction(+:a)
+#pragma omp parallel reduction(+:a)
 {
     int tid = omp_get_thread_num();
-    int nthreads = omp_get_num_threads();
-    a = my_rank * nthreads + tid;
+    int nt = omp_get_num_threads();
+    a = my_rank * nt + tid;
 }
-
 MPI_Reduce(&a, &b, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 ```
 
-Key design: the MPI call is **outside** the OpenMP parallel region.
+Each thread contributes once to its process-local sum; the MPI call then combines rank-local sums. If every rank has the same team size $Q$, the contributions enumerate $0,\ldots,PQ-1$, so root should obtain $PQ(PQ-1)/2$, assuming all intermediates fit `int`. With varying team sizes, `rank*nt+tid` no longer defines a unique contiguous global worker numbering. Real data ownership must account for that possibility.
 
----
+Follow the values across both ownership levels. The first merge uses thread-private contributions; the second uses process-local sums.
 
-## 2.4 Compiling hybrid programs
+<PX457Animation scene="hybrid" />
 
-Because `mpicc` is a wrapper, you can pass OpenMP flags through it:
-
-```bash
-mpicc -fopenmp my_hybrid_program.c -o hybrid
-```
-
----
-
-## 2.5 Running hybrid programs (threads × ranks)
-
-Example: run 2 MPI ranks, 4 OpenMP threads each.
+<h2 id="allocation">3. A resource request is part of the experiment</h2>
 
 ```bash
+mpicc -O2 -fopenmp hybrid.c -o hybrid
 export OMP_NUM_THREADS=4
 mpiexec -np 2 ./hybrid
 ```
 
-Practical note from lecture: making a hybrid code *agnostic* to how you factor "total parallelism" into ranks vs threads is non-trivial; you need careful design to avoid assumptions baked into your decomposition.
+This asks for two processes with four threads each; placement and binding still depend on the launcher. In Slurm, the corresponding fields use **double hyphens**:
 
----
+```bash
+#!/bin/bash
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=2
+#SBATCH --cpus-per-task=4
+export OMP_NUM_THREADS="$SLURM_CPUS_PER_TASK"
+srun ./hybrid
+```
 
-## 2.6 Slurm: Avon hybrid job parameters
+This is a structural template, not a site-ready submission script: partition, account, time limit and MPI integration are site-specific. On the lecture's 48-core-per-node Avon example, ranks per node times threads per rank must fit the allocated cores, at most 48 under that stated configuration. Do not treat that historical machine limit as a universal cluster property. Check core binding and NUMA placement as well as arithmetic resource counts.
 
-The lecture provides a template submission script and explains parameter coupling.
+<h2 id="scope">4. What the introductory model leaves out</h2>
 
-Core fields:
+MPI also supports coordinated MPI-IO, one-sided windows with `Get`/`Put`, and nonblocking collectives. These provide more choices about ownership and overlap; they are not required to understand the present examples. The [MPI document archive](https://www.mpi-forum.org/docs/) records standard revisions, while `MPI_Get_version` queries the implementation's reported standard version. Availability of a standard does not prove the local library supports every feature you intend to use.
 
-- `-nodes`: number of physical nodes (MPI scaling)
-- `-ntasks-per-node`: MPI ranks per node
-- `-cpus-per-task`: OpenMP threads per rank
-- `OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK`
+### Exercises and continuation
 
-Avon constraint highlighted: 48 cores per node, so:
+1. Implement four-face halo exchange with distinct old/new arrays. Mark each buffer's lifetime and every point that may depend on incoming data.
+2. Compare blocking exchange, immediate waits, and interior-overlap schedules. Verify the same numerical update before comparing time.
+3. For equal team sizes, verify the hybrid worker-sum formula for several rank/thread combinations, including one of each.
+4. Explain why a stronger MPI thread level is sufficient but a FUNNELED call from an arbitrary `single` thread can be invalid.
 
-(ntasks-per-node) × (cpus-per-task) ≤ 48.
-
----
-
-# 3) MPI Summary and What's Not Covered
-
-## 3.1 Not covered (but important in real codes)
-
-The lecture lists major MPI capabilities beyond course scope:
-
-- **MPI-IO** (coordinated parallel file I/O)
-- **One-sided comms** (`MPI_Get`, `MPI_Put`, windows via `MPI_Win_create`)
-- **Non-blocking collectives** (combine overlap with collectives)
-
-## 3.2 MPI standard evolution
-
-MPI-4 and MPI-5 are mentioned, with adoption lag as a practical reality; libraries may take years to implement full standard feature sets. MPI version support can be queried via `MPI_Get_version()`.
-
-## 3.3 Bottom-line summary
-
-MPI remains the only widely used, standards-based approach for large-scale distributed-memory parallelism; with good design, codes can scale to very large core counts, but you must manage deadlock safety and latency/bandwidth tradeoffs.
-
----
-
-## Summary
-
-- **Non-blocking MPI** (`MPI_Isend`/`MPI_Irecv` + `MPI_Wait*`) enables **asynchronous communication** and can hide **latency** by computing interior work while halo exchanges are in flight.
-- You must not touch send/recv buffers between initiation and completion.
-- **Hybrid OpenMP/MPI** matches modern clusters: fewer MPI ranks per node, OpenMP threads per rank; verify MPI thread support with `MPI_Init_thread`.
-- Slurm hybrid jobs require consistent choices of nodes, tasks-per-node, and CPUs-per-task; on Avon the product must not exceed 48 cores/node.
-
----
-
-## PX457 Implementation Checklist (C)
-
-1. Implement 2D halo exchange with `MPI_Isend`/`MPI_Irecv` (4 neighbours), update interior, then `MPI_Waitall`, then update boundary.
-2. Benchmark blocking (`MPI_Sendrecv`) vs non-blocking overlap; explain results using the lecture's latency-hiding rationale.
-3. Convert to hybrid: each rank updates its subdomain using `#pragma omp parallel for` and performs MPI comms outside the parallel region (FUNNELED).
-4. Write a Slurm script using `-ntasks-per-node` and `-cpus-per-task`, exporting `OMP_NUM_THREADS`, and ensure the 48-core constraint holds.
+OpenMP and MPI have exposed concrete sources of waiting: serial dependencies, imbalance, communication and synchronisation. [Performance metrics](/notes/px457/metrics) turns these into a quantitative model of scaling.

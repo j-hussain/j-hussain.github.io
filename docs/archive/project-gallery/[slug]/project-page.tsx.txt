@@ -1,0 +1,550 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { motion, useReducedMotion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import MobileNav from "../../components/mobile-nav";
+import TopNav from "../../components/top-nav";
+import InlineLink from "../../components/inline-link";
+import {
+    LAST_PROJECT_KEY,
+    projects,
+    projectsByDate,
+    type Project,
+    type Prose,
+    type Shot,
+    type StoryBlock,
+} from "../../data/projects";
+import { finishTransition, isTransitioning, pushWithTransition } from "../../../lib/view-transition";
+
+/** One centred frame holds everything, so text and media share both edges. */
+const FRAME = "mx-auto w-full max-w-[56rem]";
+const BODY = "text-[16px] leading-[1.7] [text-wrap:pretty]";
+const MUTED = "text-[var(--muted-color)]";
+// Next re-encodes at 75 by default, which smears the small UI text in screenshots.
+const IMAGE_QUALITY = 90;
+const GLIDE = 0.18; // share of the remaining distance the page covers each frame when scrolled with a wheel
+const MEDIA =
+    "block aspect-video h-auto w-full rounded-[6px] bg-black shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground-color)_8%,transparent)]";
+
+export default function ProjectPage({ slug }: { slug: string }) {
+    const router = useRouter();
+    const project = projects.find((p) => p.slug === slug);
+    const still = useReducedMotion() ?? false;
+
+    // Wheel scrolling glides to where it's headed instead of stepping, the same feel as the projects strip.
+    useEffect(() => {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        let target = window.scrollY;
+        let raf = 0;
+        // "instant" overrides the page's CSS smooth scrolling, which would otherwise animate every frame's step.
+        const to = (top: number) => window.scrollTo({ top, behavior: "instant" });
+
+        const glide = () => {
+            const gap = target - window.scrollY;
+            if (Math.abs(gap) < 1) {
+                to(target);
+                raf = 0;
+                return;
+            }
+            // At least a pixel a frame, so rounding can't stall it just short of the target.
+            to(window.scrollY + Math.sign(gap) * Math.max(1, Math.abs(gap) * GLIDE));
+            raf = requestAnimationFrame(glide);
+        };
+
+        const onWheel = (e: WheelEvent) => {
+            // Pinch-zoom and sideways swipes (the gallery row on small screens) stay with the browser.
+            if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+            e.preventDefault();
+            const max = document.documentElement.scrollHeight - window.innerHeight;
+            if (!raf) target = window.scrollY;
+            target = Math.max(0, Math.min(max, target + (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY)));
+            if (!raf) raf = requestAnimationFrame(glide);
+        };
+
+        window.addEventListener("wheel", onWheel, { passive: false });
+        return () => {
+            cancelAnimationFrame(raf);
+            window.removeEventListener("wheel", onWheel);
+        };
+    }, []);
+
+    // The nav switches to light text while it sits over the cover, and back once the cover scrolls past it.
+    const coverRef = useRef<HTMLDivElement>(null);
+    const [overCover, setOverCover] = useState(false);
+    const hasCover = Boolean(project?.page?.cover);
+    useEffect(() => {
+        const cover = coverRef.current;
+        if (!hasCover || !cover) return;
+        const update = () => setOverCover(cover.getBoundingClientRect().bottom > 56);
+        update();
+        window.addEventListener("scroll", update, { passive: true });
+        window.addEventListener("resize", update);
+        return () => {
+            window.removeEventListener("scroll", update);
+            window.removeEventListener("resize", update);
+        };
+    }, [hasCover]);
+
+    // Arriving with a slide (from the strip or a neighbouring project), the page slides in as soon as it has rendered.
+    const [arrivedSliding] = useState(() => typeof window !== "undefined" && isTransitioning());
+    useEffect(() => {
+        finishTransition();
+    }, []);
+    useEffect(() => {
+        sessionStorage.setItem(LAST_PROJECT_KEY, slug);
+    }, [slug]);
+
+    // Previous and next follow the strip's order and wrap around, so there's always somewhere to go.
+    const pages = projectsByDate.filter((p) => p.page);
+    const at = pages.findIndex((p) => p.slug === slug);
+    const prev = pages[(at - 1 + pages.length) % pages.length];
+    const next = pages[(at + 1) % pages.length];
+
+    if (!project?.page) return null;
+    const { page } = project;
+
+    return (
+        <div className="min-h-screen w-full bg-background text-foreground">
+            <MobileNav />
+            <TopNav overCover={overCover} />
+            {page.cover && (
+                // Full-bleed cover. On desktop it runs to the top edge with the nav over it; on mobile it sits under the
+                // nav pill (padding, not margin, so the page colour shows above it). The lower edge fades into the page.
+                <div className="pt-20 lg:pt-0">
+                    <div ref={coverRef} className="relative h-[clamp(180px,26vw,440px)] w-full overflow-hidden">
+                        <Image
+                            src={page.cover}
+                            alt=""
+                            fill
+                            preload
+                            sizes="100vw"
+                            quality={IMAGE_QUALITY}
+                            className="object-cover object-[78%_top]"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 h-1/3 bg-[linear-gradient(to_bottom,transparent,var(--background-color))]" />
+                    </div>
+                </div>
+            )}
+            <motion.main
+                // The view transition already brings the page in when it comes from the strip.
+                initial={arrivedSliding ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                className={`${FRAME} px-6 pb-40 font-geistSans lg:box-content ${page.cover ? "pt-10 lg:pt-14" : "pt-28 lg:pt-40"}`}
+            >
+                <header>
+                    <Link
+                        href="/projects"
+                        onClick={(e) => {
+                            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                            e.preventDefault();
+                            // The reverse of opening a project: this page slides off to the right, uncovering the strip.
+                            pushWithTransition(router, "/projects", "back");
+                        }}
+                        className={`text-[14px] ${MUTED} outline-none transition-colors hover:text-foreground focus-visible:text-foreground`}
+                    >
+                        ← Projects
+                    </Link>
+                    <h1 className="mt-10 text-[28px] font-medium leading-[1.2] tracking-[-0.015em]">{project.name}</h1>
+                    <p className={`mt-1 text-[16px] ${MUTED}`}>{page.tagline}</p>
+                    <p className={`${BODY} mt-8`}>
+                        <Parts parts={page.about} />
+                    </p>
+                    {project.link && (
+                        <p className="mt-4 text-[14px]">
+                            <InlineLink href={project.link}>
+                                {new URL(project.link).hostname.replace(/^www\./, "")}
+                            </InlineLink>
+                        </p>
+                    )}
+                </header>
+
+                <div className="mt-16">
+                    {page.video ? (
+                        // Muted autoplay loops like a gif; with reduced motion it waits for the viewer to press play.
+                        <video
+                            src={page.video}
+                            poster={page.poster}
+                            autoPlay={!still}
+                            controls={still}
+                            muted
+                            loop
+                            playsInline
+                            preload="metadata"
+                            aria-label={`${project.name} demo`}
+                            className={MEDIA}
+                        />
+                    ) : (
+                        <Image
+                            src={page.poster}
+                            alt={`${project.name}, ${page.tagline}`}
+                            width={1920}
+                            height={1080}
+                            preload
+                            sizes="(min-width: 1024px) 56rem, 100vw"
+                            quality={IMAGE_QUALITY}
+                            className={MEDIA}
+                        />
+                    )}
+                </div>
+
+                {page.story && <Story blocks={page.story} still={still} />}
+
+                {pages.length > 1 && (
+                    <nav
+                        aria-label="More projects"
+                        className="mt-24 flex items-start justify-between gap-6 border-t border-[color-mix(in_srgb,var(--foreground-color)_10%,transparent)] pt-6"
+                    >
+                        <PagerLink project={prev} direction="back" />
+                        <PagerLink project={next} direction="forward" />
+                    </nav>
+                )}
+            </motion.main>
+        </div>
+    );
+}
+
+const CARD_GAP = 18; // px between the cursor and the preview card's lower edge
+const CARD_FOLLOW = 0.25; // share of the remaining distance the card covers each frame as it trails the cursor
+
+/**
+ * A link to the previous or next project. Hovering it floats a small card with that project's thumbnail, name and
+ * tagline that trails the cursor; clicking slides over to it the same way the strip does.
+ */
+function PagerLink({ project, direction }: { project: Project; direction: "back" | "forward" }) {
+    const router = useRouter();
+    const cardRef = useRef<HTMLSpanElement>(null);
+    const follow = useRef({ x: 0, y: 0, tx: 0, ty: 0, raf: 0 });
+    const href = `/projects/${project.slug}`;
+    const back = direction === "back";
+
+    useEffect(() => () => cancelAnimationFrame(follow.current.raf), []);
+
+    // Above the point and centred on it, kept on screen; flips below when there's no room above.
+    const aim = (x: number, y: number) => {
+        const card = cardRef.current;
+        if (!card) return;
+        const f = follow.current;
+        f.tx = Math.max(12, Math.min(window.innerWidth - card.offsetWidth - 12, x - card.offsetWidth / 2));
+        f.ty = y - card.offsetHeight - CARD_GAP < 12 ? y + CARD_GAP : y - card.offsetHeight - CARD_GAP;
+    };
+    const place = () => {
+        const f = follow.current;
+        cardRef.current?.style.setProperty("transform", `translate3d(${f.x}px, ${f.y}px, 0)`);
+    };
+    const step = () => {
+        const f = follow.current;
+        f.x += (f.tx - f.x) * CARD_FOLLOW;
+        f.y += (f.ty - f.y) * CARD_FOLLOW;
+        place();
+        f.raf = Math.abs(f.tx - f.x) + Math.abs(f.ty - f.y) > 0.5 ? requestAnimationFrame(step) : 0;
+    };
+    // Jump straight to the point on arrival so the card doesn't fly in from wherever it last was.
+    const settle = (x: number, y: number) => {
+        aim(x, y);
+        const f = follow.current;
+        f.x = f.tx;
+        f.y = f.ty;
+        place();
+    };
+
+    return (
+        <Link
+            href={href}
+            onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                e.preventDefault();
+                pushWithTransition(router, href, direction);
+            }}
+            onPointerEnter={(e) => settle(e.clientX, e.clientY)}
+            onPointerMove={(e) => {
+                aim(e.clientX, e.clientY);
+                if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+                    settle(e.clientX, e.clientY);
+                } else if (!follow.current.raf) {
+                    follow.current.raf = requestAnimationFrame(step);
+                }
+            }}
+            // From the keyboard there's no cursor, so the card sits over the link itself.
+            onFocus={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                settle(r.left + r.width / 2, r.top);
+            }}
+            className={`group relative flex flex-col gap-1 outline-none ${back ? "items-start" : "items-end text-right"}`}
+        >
+            <span className={`font-geistMono text-[12px] ${MUTED}`}>{back ? "previous" : "next"}</span>
+            <span className="text-[16px] decoration-1 underline-offset-4 group-hover:underline group-focus-visible:underline">
+                {back ? `← ${project.name}` : `${project.name} →`}
+            </span>
+            <span
+                ref={cardRef}
+                aria-hidden
+                className="pointer-events-none fixed left-0 top-0 z-50 w-[17rem] rounded-[8px] border border-[color-mix(in_srgb,var(--foreground-color)_10%,transparent)] bg-background p-2 text-left opacity-0 shadow-[0_12px_32px_rgb(0_0_0/0.25)] transition-[opacity,scale] duration-200 ease-out [scale:0.96] will-change-transform group-hover:opacity-100 group-hover:[scale:1] group-focus-visible:opacity-100 group-focus-visible:[scale:1]"
+            >
+                <span className="relative block aspect-[3/2] overflow-hidden rounded-[4px]">
+                    <Image
+                        src={project.thumb}
+                        alt=""
+                        fill
+                        sizes="17rem"
+                        quality={IMAGE_QUALITY}
+                        className="object-cover"
+                    />
+                </span>
+                <span className="mt-2 flex items-baseline gap-2 px-1">
+                    <span className="text-[14px]">{project.name}</span>
+                    <span className={`font-geistMono text-[11px] ${MUTED}`}>{project.year}</span>
+                </span>
+                {project.page?.tagline && (
+                    <span className={`mt-0.5 block px-1 pb-1 text-[13px] leading-[1.45] ${MUTED}`}>
+                        {project.page.tagline}
+                    </span>
+                )}
+            </span>
+        </Link>
+    );
+}
+
+/** The story as quiet sections of prose, with the clips set wider between them. */
+function Story({ blocks, still }: { blocks: StoryBlock[]; still: boolean }) {
+    return (
+        <div className="mt-24 flex flex-col">
+            {blocks.map((block, i) => {
+                if (block.kind === "heading") {
+                    return (
+                        <h2
+                            key={i}
+                            className={`mb-3 text-[16px] font-medium leading-[1.6] [&:not(:first-child)]:mt-16`}
+                        >
+                            {block.text}
+                        </h2>
+                    );
+                }
+                if (block.kind === "gallery") {
+                    return <Gallery key={i} title={block.title} shots={block.shots} start={block.start} />;
+                }
+                if (block.kind === "image") {
+                    return (
+                        <Image
+                            key={i}
+                            src={block.src}
+                            alt={block.alt}
+                            width={block.width}
+                            height={block.height}
+                            sizes="(min-width: 1024px) 40rem, 100vw"
+                            quality={IMAGE_QUALITY}
+                            className="my-6 h-auto w-full rounded-[6px] border border-[color-mix(in_srgb,var(--foreground-color)_10%,transparent)]"
+                        />
+                    );
+                }
+                if (block.kind === "clip") {
+                    return (
+                        <div key={i} className="my-12">
+                            <LoopVideo src={block.src} poster={block.poster} label={block.label} still={still} />
+                        </div>
+                    );
+                }
+                return (
+                    <p
+                        key={i}
+                        className={`${BODY} text-[color-mix(in_srgb,var(--foreground-color)_72%,transparent)] [p+&]:mt-5`}
+                    >
+                        <Parts parts={block.parts} />
+                    </p>
+                );
+            })}
+        </div>
+    );
+}
+
+function Parts({ parts }: { parts: Prose }) {
+    return parts.map((part, i) =>
+        typeof part === "string" ? (
+            part
+        ) : (
+            <InlineLink key={i} href={part.href}>
+                {part.text}
+            </InlineLink>
+        )
+    );
+}
+
+const HOVER_INTENT_MS = 150;
+const PEEK_MS = 700;
+
+/** A captioned still, framed like a small widget: the image, then a short title and one line under it. */
+function ShotCard({ shot, sizes }: { shot: Shot; sizes: string }) {
+    return (
+        <figure className="flex min-w-0 flex-col gap-3">
+            <Image
+                src={shot.src}
+                alt={shot.alt}
+                width={shot.width}
+                height={shot.height}
+                sizes={sizes}
+                quality={IMAGE_QUALITY}
+                className="h-auto w-full rounded-[10px] bg-black shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground-color)_8%,transparent)]"
+            />
+            <figcaption className="text-[14px] leading-[1.55] [text-wrap:pretty]">
+                <span className="font-medium">{shot.title}.</span> <span className={MUTED}>{shot.caption}</span>
+            </figcaption>
+        </figure>
+    );
+}
+
+/**
+ * A group of shots. On desktop it's an accordion: panels share one row, the active one opens wide in colour and the
+ * rest fold into grey slivers. On smaller screens it's a row of cards that scrolls sideways.
+ */
+function Gallery({ title, shots, start = 0 }: { title?: string; shots: Shot[]; start?: number }) {
+    const [active, setActive] = useState(start);
+    const current = shots[active];
+    // Hover only opens a panel once the cursor settles, so sweeping past the row on the way down does nothing.
+    const intent = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const hoverOpen = (i: number) => {
+        clearTimeout(intent.current);
+        intent.current = setTimeout(() => setActive(i), HOVER_INTENT_MS);
+    };
+    const cancelHover = () => clearTimeout(intent.current);
+    useEffect(() => () => clearTimeout(intent.current), []);
+
+    // The first time the row scrolls into view, the next panel nudges open and back, hinting that the slivers move.
+    const row = useRef<HTMLDivElement>(null);
+    const [peek, setPeek] = useState<number | null>(null);
+    useEffect(() => {
+        const el = row.current;
+        if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        let timer: ReturnType<typeof setTimeout>;
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (!entry.isIntersecting) return;
+                observer.disconnect();
+                timer = setTimeout(() => {
+                    setPeek((start + 1) % shots.length);
+                    timer = setTimeout(() => setPeek(null), PEEK_MS);
+                }, 400);
+            },
+            { threshold: 0.6 }
+        );
+        observer.observe(el);
+        return () => {
+            observer.disconnect();
+            clearTimeout(timer);
+        };
+    }, [start, shots.length]);
+
+    return (
+        <section aria-label={title} className="my-12 flex flex-col gap-4">
+            <div className="flex items-baseline justify-between font-geistMono text-[13px]">
+                {title && <span className={MUTED}>{title.toLowerCase()}</span>}
+                <span className={`hidden tabular-nums lg:inline ${MUTED}`}>
+                    {active + 1} / {shots.length}
+                </span>
+            </div>
+
+            {/* Hovering the row lifts every sliver a little, so the whole strip reads as interactive. */}
+            <div ref={row} className="group/row hidden h-[26rem] gap-2 lg:flex">
+                {shots.map((shot, i) => {
+                    const open = i === active;
+                    return (
+                        <button
+                            key={shot.frame}
+                            type="button"
+                            aria-label={shot.title}
+                            aria-pressed={open}
+                            onMouseEnter={() => hoverOpen(i)}
+                            onMouseLeave={cancelHover}
+                            onFocus={() => setActive(i)}
+                            onClick={() => {
+                                cancelHover();
+                                setActive(i);
+                            }}
+                            className={`group relative h-full min-w-0 overflow-hidden rounded-[10px] bg-black shadow-[0_0_0_1px_color-mix(in_srgb,var(--foreground-color)_8%,transparent)] outline-none transition-[flex-grow] duration-500 ease-[cubic-bezier(0.2,0.7,0.2,1)] focus-visible:ring-1 focus-visible:ring-foreground motion-reduce:transition-none ${
+                                open ? "grow-[8]" : i === peek ? "grow-[2.2]" : "grow"
+                            }`}
+                            style={{ flexBasis: 0 }}
+                        >
+                            <Image
+                                src={shot.frame}
+                                alt={open ? shot.alt : ""}
+                                fill
+                                sizes="(min-width: 1024px) 48rem, 1px"
+                                quality={IMAGE_QUALITY}
+                                className={`object-cover object-[50%_35%] transition-[filter,opacity] duration-500 motion-reduce:transition-none ${
+                                    open
+                                        ? ""
+                                        : "opacity-30 grayscale group-hover/row:opacity-45 group-hover:!opacity-70"
+                                }`}
+                            />
+                            <span
+                                className={`absolute bottom-4 left-4 flex items-center gap-2 font-geistMono text-[13px] text-dark-foreground transition-opacity duration-300 ${
+                                    open ? "opacity-100 delay-200" : "opacity-0"
+                                }`}
+                            >
+                                <span className="h-3.5 w-[2px] bg-dark-foreground" />
+                                {shot.title.toLowerCase()}
+                            </span>
+                            {/* Folded panels say what's inside them, so the hidden states invite a look. */}
+                            <span
+                                aria-hidden="true"
+                                className={`absolute inset-0 flex items-end justify-center pb-4 font-geistMono text-[13px] text-dark-foreground transition-opacity duration-300 ${
+                                    open ? "opacity-0" : "opacity-80 group-hover:opacity-100"
+                                }`}
+                            >
+                                <span className="whitespace-nowrap [writing-mode:vertical-rl] rotate-180">
+                                    {shot.title.toLowerCase()}
+                                </span>
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+            {/* Two lines reserved, so a longer caption never pushes the page down. */}
+            <p className={`hidden min-h-[3.1em] text-[14px] leading-[1.55] lg:block ${MUTED}`} aria-live="polite">
+                <span className="font-medium text-foreground">{current.title}.</span> {current.caption}
+            </p>
+
+            <div className="-mx-6 flex snap-x snap-mandatory scroll-px-6 gap-4 overflow-x-auto px-6 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
+                {shots.map((shot) => (
+                    <div key={shot.src} className="w-[88%] shrink-0 snap-start">
+                        <ShotCard shot={shot} sizes="90vw" />
+                    </div>
+                ))}
+            </div>
+        </section>
+    );
+}
+
+/** A muted looping clip that only plays while it's on screen, so a page of them stays light. */
+function LoopVideo({ src, poster, label, still }: { src: string; poster?: string; label: string; still: boolean }) {
+    const ref = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        const video = ref.current;
+        if (!video || still) return;
+        const observer = new IntersectionObserver(([entry]) => {
+            if (entry.isIntersecting) video.play().catch(() => {});
+            else video.pause();
+        });
+        observer.observe(video);
+        return () => observer.disconnect();
+    }, [still]);
+
+    return (
+        <video
+            ref={ref}
+            src={src}
+            poster={poster}
+            controls={still}
+            muted
+            loop
+            playsInline
+            preload="none"
+            aria-label={label}
+            className={MEDIA}
+        />
+    );
+}

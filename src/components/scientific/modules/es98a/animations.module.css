@@ -1,0 +1,141 @@
+.animation {
+    margin-block: 2.5rem;
+}
+.panels {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.4rem;
+    margin-top: 1.2rem;
+}
+.panel {
+    min-width: 0;
+}
+.panel h4 {
+    font-size: 0.9rem;
+    font-weight: 500;
+    line-height: 1.5;
+    min-height: 3em;
+    margin: 0;
+}
+.plot {
+    width: 100%;
+    height: auto;
+    display: block;
+    overflow: visible;
+}
+.plot text {
+    fill: currentColor;
+    font-size: 15px;
+    font-family: var(--font-geist-sans), sans-serif;
+}
+.axis {
+    fill: none;
+    stroke: currentColor;
+    opacity: 0.28;
+    stroke-width: 1;
+}
+.zero {
+    fill: none;
+    stroke: currentColor;
+    opacity: 0.12;
+    stroke-width: 1;
+}
+.curve {
+    fill: none;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+.accent {
+    color: var(--sci-accent);
+}
+.secondary {
+    color: var(--sci-secondary);
+}
+.ink {
+    color: inherit;
+}
+.formula {
+    font-family: Georgia, serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    min-height: 3.2em;
+    margin-block: 0.3rem 0.8rem;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.summary {
+    font-size: 0.9rem;
+    line-height: 1.7;
+    min-height: 5.1em;
+    margin-block: 0.5rem 1rem;
+}
+.transport {
+    display: flex;
+    gap: 0.7rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.scrubber {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.3rem 0.8rem;
+    font-size: 0.85rem;
+}
+.scrubber input {
+    grid-column: 1/-1;
+    width: 100%;
+    min-height: 44px;
+    accent-color: var(--sci-accent);
+    margin: 0;
+    cursor: ew-resize;
+}
+.percentage {
+    font-variant-numeric: tabular-nums;
+}
+.transport button {
+    min-height: 44px;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-radius: 3px;
+    font-size: 0.85rem;
+    background: transparent;
+    cursor: pointer;
+}
+.transport button:hover {
+    border-color: var(--sci-accent);
+}
+.transport :focus-visible {
+    outline: 2px solid var(--sci-accent);
+    outline-offset: 4px;
+}
+.motionNote {
+    font-size: 0.8rem;
+    opacity: 0.75;
+    margin: 0;
+}
+@media (max-width: 700px) {
+    .panels {
+        grid-template-columns: 1fr;
+        gap: 0.7rem;
+    }
+    .panel h4 {
+        min-height: 0;
+    }
+    .plot {
+        max-width: 380px;
+        margin-inline: auto;
+    }
+    .formula,
+    .summary {
+        min-height: 0;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .animation * {
+        scroll-behavior: auto;
+        transition: none;
+        animation: none;
+    }
+}

@@ -3,204 +3,111 @@ layout: page
 title: "MPI: Collective Communications"
 ---
 
-### *MPI-03: Collective Communications*
+Every rank holds a local array. Rank zero needs either all arrays in order, or their elementwise sum. Those are different mathematical objects. Gathering concatenates data; reducing combines corresponding values. Choosing the operation begins with specifying the desired result, before selecting an MPI routine.
 
----
+[Point-to-point messages](/notes/px457/mpi-point-to-point#matching) describe individual transfers. A **collective** describes a pattern involving all members of a communicator. The library can choose an implementation suited to message size and hardware, while the application states the data movement or algebra it needs.
 
-## Conceptual Focus
+<h2 id="layouts">1. Read the result's shape first</h2>
 
-Point-to-point messaging (`MPI_Send`/`MPI_Recv`) is flexible but verbose and easier to get wrong (ordering, deadlocks, complexity). MPI therefore provides **collective operations** that implement common communication patterns efficiently and portably.
+Take three ranks with two values each:
 
-Collectives are:
+$$
+a^{(0)}=(1,2),\qquad a^{(1)}=(3,4),\qquad a^{(2)}=(5,6).
+$$
 
-- Called by **all ranks in a communicator** (typically `MPI_COMM_WORLD`) with **compatible arguments**.
-- Implemented by the MPI library in a way that is often **topology- and hardware-optimised**.
-- A mix of **data movement** and often **implicit synchronisation** (because everyone must participate).
+Gather produces $(1,2,3,4,5,6)$, a vector of length six. Sum-reduce produces $(9,12)$, a vector of length two. The reduction is **across ranks at each element**, not a sum over each local array followed by an implicit second reduction.
 
----
+<Figure id="px457-collective-shapes" title="Concatenation versus combination" caption="The same rank-labelled inputs give two different outputs. Gather retains all six values in rank order. Reduce applies an operator to each aligned column. Root is chosen by the caller; allgather/allreduce distribute the corresponding result to every rank.">
+<svg viewBox="0 0 360 200" role="img" aria-label="Inputs rank zero 1 2, rank one 3 4, rank two 5 6. Gather output 1 2 3 4 5 6. Sum reduce output 9 12" style={{width: "100%", height: "auto"}}>
+<g fill="currentColor" fontSize="14"><text x="10" y="25">rank 0       [1, 2]</text><text x="10" y="53">rank 1       [3, 4]</text><text x="10" y="81">rank 2       [5, 6]</text><text x="10" y="138">gather:   [1, 2 | 3, 4 | 5, 6]</text><text x="10" y="180">reduce:  [1+3+5, 2+4+6] = [9, 12]</text></g>
+<path d="M10 101H345" stroke="currentColor" strokeDasharray="4 4"/>
+</svg>
+</Figure>
 
-## Why collectives matter (I/O use case)
+All examples below are intracommunicator collectives with compatible types, valid significant buffers, count `n>=0` and root in $[0,P)$. Here every local block has the same length. Variable-count routines such as `Gatherv` extend this case but are outside the original material.
 
-In many HPC environments, you should assume **rank 0** is the only rank that reliably reads from standard input. If every rank tries to read, behaviour is implementation-dependent and can become chaotic. Hence: rank 0 reads, then **broadcasts** configuration/inputs to everyone else.
+Now trace where each input value goes. Watch whether the root retains separate positions or combines corresponding entries.
 
----
+<PX457Animation scene="collective" />
 
-# 1) Basic Collective Communications
+<h2 id="broadcast">2. Replicate a decision: broadcast</h2>
 
-## 1.1 Broadcast: `MPI_Bcast`
-
-**Goal:** Copy a buffer from one "root" rank to all ranks.
+Often only a designated rank reads standard input reliably under the launcher. Have it read the configuration, then broadcast:
 
 ```c
 MPI_Bcast(a, n, MPI_FLOAT, root, MPI_COMM_WORLD);
 ```
 
-**Semantics**
+The root supplies the values in its `a`; other ranks' `a` buffers receive them. Each rank calls the operation, including the root. In these simple examples counts and datatypes agree; the more general MPI requirement is compatible type signatures. The root's rank and communicator must agree everywhere.
 
-- Every rank calls `MPI_Bcast` with the same `n`, datatype, `root`, communicator.
-- On `root`: buffer `a` is the source.
-- On non-root ranks: buffer `a` is overwritten with root's data.
-- Blocking: returns when `a` is safe to use on that rank.
+Returning from this blocking call makes the local buffer safe for subsequent use. It does not make the call a general barrier proving that every other rank has returned.
 
-**Mental model:** rank 1 holds `[4,2]` and after `MPI_Bcast(... root=1 ...)` all ranks have `[4,2]`.
+A broadcast need not make the root perform every transfer. Once another rank has the value, it can help forward it. Count the propagation rounds here; the topology chapter will examine what those rounds cost.
 
----
+<PX457Animation scene="broadcast" />
 
-## 1.2 Reduce: `MPI_Reduce`
-
-**Goal:** Combine per-rank buffers into one result on the root, using an associative operator.
+<h2 id="reduce">3. Combine contributions: reduce and allreduce</h2>
 
 ```c
-MPI_Reduce(a, a_sum, n, MPI_FLOAT, MPI_SUM, root, MPI_COMM_WORLD);
+MPI_Reduce(a, sum, n, MPI_FLOAT, MPI_SUM, root, MPI_COMM_WORLD);
+MPI_Allreduce(a, sum, n, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
 ```
 
-**Semantics**
+Use these as alternative operations for the same inputs, not as a requirement to call both. `Reduce` makes the result available on root; its receive buffer is insignificant elsewhere. `Allreduce` gives every rank the combined result. It is equivalent in effect to reduce-then-broadcast, but need not use that algorithm.
 
-- Each rank provides input buffer `a` (length `n`).
-- Root receives output buffer `a_sum` (length `n`).
-- Combination is elementwise across ranks (e.g. sums per element).
-- **Not allowed:** `a` and `a_sum` being the same variable.
-- Blocking: completes when input has been contributed; root has output.
+Operations include `MPI_SUM`, `MPI_PROD`, `MPI_MAX`, `MPI_MIN`, logical operations, and location-returning `MPI_MAXLOC`/`MPI_MINLOC` with suitable datatypes. Reduction operators must obey the MPI algebraic contract. Mathematical addition is associative; floating-point addition is only approximately so, and different reduction trees can change rounding.
 
-**Operations shown:** `MPI_SUM`, also `MPI_PROD`, `MPI_MAX`, `MPI_MIN`, logical ops, and location-aware variants `MPI_MAXLOC/MPI_MINLOC`.
+Ordinary input/output buffers must not overlap. MPI has an explicit in-place convention: for an intracommunicator `MPI_Reduce`, root can use `MPI_IN_PLACE` as its send buffer, with its contribution already in the receive buffer; in-place allreduce is also supported. Do not alias ordinary pointers and assume that is equivalent. See the [MPI reduction reference](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Reduce.3.html).
 
-**Mental model:** four ranks each contribute 2 ints; root gets the elementwise sum `[16,20]`.
+A distributed scalar sum usually has two stages:
 
----
+$$
+s_r=\sum_{i\in I_r}x_i,
+\qquad s=\sum_{r=0}^{P-1}s_r.
+$$
 
-## 1.3 Allreduce: `MPI_Allreduce`
+An [OpenMP reduction](/notes/px457/openmp-variables-synchronisation#synchronisation) can compute $s_r$ inside each process; MPI then combines processes. This algebra will return in hybrid programming.
 
-**Goal:** Like Reduce, but every rank receives the reduced result.
+<h2 id="gather">4. Retain contributions: gather and allgather</h2>
 
 ```c
-MPI_Allreduce(a, a_sum, n, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+MPI_Gather(a, n, MPI_FLOAT, b, n, MPI_FLOAT, root, MPI_COMM_WORLD);
+MPI_Allgather(a, n, MPI_FLOAT, b, n, MPI_FLOAT, MPI_COMM_WORLD);
 ```
 
-**Semantics**
+For gather, root allocates `n*P` elements in `b`; its block from rank $r$ occupies offsets $rn$ through $(r+1)n-1$. The receive count is **per sender**, not total. The root contributes a block too. For allgather, every rank allocates the full output. Replication can cost substantial memory; use it only when every rank needs every block.
 
-- Functionally similar to `MPI_Reduce` followed by `MPI_Bcast`,
-    but implementations can do better than naïve composition.
-- Blocking: every rank returns with `a_sum` populated.
-
-**Mental model:** every rank ends up with the same `[16,20]`.
-
----
-
-# 2) More Advanced Collective Communications
-
-## 2.1 Gather: `MPI_Gather`
-
-**Goal:** Collect fixed-size blocks from all ranks onto the root, concatenated in rank order.
+<h2 id="scatter">5. Assign blocks: scatter</h2>
 
 ```c
-MPI_Gather(a, n, MPI_FLOAT,
-           b, n, MPI_FLOAT,
-           root, MPI_COMM_WORLD);
+MPI_Scatter(a, n, MPI_FLOAT, b, n, MPI_FLOAT, root, MPI_COMM_WORLD);
 ```
 
-**Semantics**
+Root's `a` contains `n*P` elements. Rank $r$ receives the rank-$r$ block into local `b`. Root's send buffer is insignificant on non-root ranks and can be `NULL` there; every rank still needs a valid receive buffer for a positive count. An argument being insignificant is an MPI semantic fact, not permission to use an invalid significant buffer.
 
-- Each rank sends `n` elements from `a`.
-- Root receives `n * P` elements in `b` laid out as:
-    `b[0..n-1]` from rank 0, `b[n..2n-1]` from rank 1, etc.
-- Root must allocate `b` with capacity ≥ `n*P`.
+Scatter → local computation → gather is a useful initial decomposition. It can also bottleneck on the root's memory and traffic; a scalable implementation may construct or read each partition locally instead.
 
-**Mental model:** with `n=2, P=4`, root ends up with an 8-element array formed by concatenating each rank's 2-element `a`.
-
----
-
-## 2.2 Allgather: `MPI_Allgather`
-
-**Goal:** Like Gather, but the gathered buffer is replicated on all ranks.
+<h2 id="alltoall">6. Transpose ownership: all-to-all</h2>
 
 ```c
-MPI_Allgather(a, n, MPI_FLOAT,
-              b, n, MPI_FLOAT,
-              MPI_COMM_WORLD);
+MPI_Alltoall(a, n, MPI_FLOAT, b, n, MPI_FLOAT, MPI_COMM_WORLD);
 ```
 
-**Semantics**
+Every rank allocates `n*P` send and receive elements. Denote by $A_{rs}$ the block on rank $r$ intended for rank $s$. After the operation, rank $s$ holds blocks $A_{0s},\ldots,A_{P-1,s}$ in source-rank order. The operation transposes the two rank indices, not the elements inside each block. This view explains its role in distributed transposes and FFT decompositions.
 
-- Equivalent "in effect" to `MPI_Gather` then `MPI_Bcast`, but optimised.
-- Every rank allocates `b` of size `n*P`.
+<h2 id="order">7. Collective order identifies the conversation</h2>
 
----
+Collectives have no user tag. Participating ranks must issue matching collectives in the same order on a communicator, with compatible arguments. They must not assume a blocking collective synchronises unrelated subsequent communication as a barrier would.
 
-## 2.3 Scatter: `MPI_Scatter`
+Consider two broadcasts with identical types, counts and root. Root broadcasts `a=5` then `b=10`; one receiver passes its local `b` first, then its local `a`. The calls can legally match **by sequence**, leaving that receiver with `b=5,a=10`: MPI cannot know which variable name you intended. If ranks instead disagree on roots or collective kinds, the program can be erroneous or deadlock. This distinction is more useful than labelling every swapped variable a library error.
 
-**Goal:** Root splits a large buffer into rank-ordered chunks and distributes them.
+<PredictReveal question="Root broadcasts a and then b. Another rank calls the same two broadcasts but passes b first and a second. Do variable names help MPI match the intended values?" choices={[{id:"names",label:"Yes: a matches a"},{id:"order",label:"No: calls match by order"}]} answer="order" explanation={<p>MPI does not transmit C variable names. With compatible signatures and root, the first call matches the first call, so that rank can receive the values into the opposite variables. Check both call order and semantic buffer meaning.</p>} />
 
-```c
-MPI_Scatter(a, n, MPI_FLOAT,
-            b, n, MPI_FLOAT,
-            root, MPI_COMM_WORLD);
-```
+### Exercises and continuation
 
-**Semantics**
+1. Reproduce the gather and reduce outputs in the opening example. Then replace reduce with allreduce and state who owns the result.
+2. Broadcast `N`, scatter an array, square each local block, and gather it. State the divisibility and allocation assumptions.
+3. Let `a[s] = 100*rank + s` with one element per destination. Predict every receive buffer after all-to-all.
+4. Compare MPI sums against a serial reference with cancellation-prone inputs and a stated tolerance.
 
-- Root has `a` with at least `n*P` elements.
-- Rank `r` receives chunk `a[r*n : (r+1)*n]` into `b`.
-- Non-root ranks' `a` argument is ignored in practice (but still must be a valid pointer in C codebases; common convention is to pass `NULL` when allowed by your MPI).
-
-**Mental model:** an 8-element array on root is split into 4 chunks of length 2, one per rank.
-
----
-
-## 2.4 All-to-all: `MPI_Alltoall`
-
-**Goal:** Every rank sends a distinct chunk to every other rank (full exchange).
-
-```c
-MPI_Alltoall(a, n, MPI_FLOAT,
-             b, n, MPI_FLOAT,
-             MPI_COMM_WORLD);
-```
-
-**Semantics**
-
-- Each rank's send buffer `a` is logically partitioned into `P` chunks of size `n`.
-- Chunk `i` is sent to rank `i`.
-- Receive buffer `b` stores the chunk received from each rank in rank order.
-- Both `a` and `b` need capacity ≥ `n*P`.
-
-**Mental model:** with `n=1, P=4`, each rank contributes one element to each other rank; each rank's `b` ends up containing 4 values—one from each sender.
-
----
-
-# 3) Collective vs Point-to-Point: Ordering Rules
-
-## 3.1 Point-to-point ordering is not enough
-
-MPI guarantees that point-to-point messages **arrive in the order they were sent**, but the receiver can still *choose* to receive them in a different order by specifying different tags—*if buffering allows it*. The lecture's example shows why this can be "unsafe" when synchronous semantics occur (deadlock risk).
-
-## 3.2 Collective calls must match in the same order
-
-Collectives have **no tags**. Therefore **the sequence of collective calls is matched strictly by call order**.
-
-The lecture gives an explicit "wrong program" pattern: rank 0 broadcasts `a` then `b`, rank 1 calls in the same order, but another rank calls `b` then `a`. Result: that rank receives swapped values (or you trigger undefined behaviour depending on the collective and implementation). The "Before/After" table on the last slide shows rank 2 ending with `(a,b)=(10,5)` rather than `(5,10)` due purely to mismatched call order.
-
-**Rule:** every rank must execute collectives in the **same order** on the **same communicator**, with argument compatibility.
-
----
-
-## Summary
-
-- **Collectives** are standard communication patterns implemented efficiently by MPI libraries.
-- Core operations:
-    - `MPI_Bcast`: root → all (replicate data).
-    - `MPI_Reduce`: all → root (combine via operator).
-    - `MPI_Allreduce`: all → all (combine + replicate).
-    - `MPI_Gather`/`MPI_Allgather`: concatenate rank blocks to root / to all.
-    - `MPI_Scatter`: root splits and distributes blocks.
-    - `MPI_Alltoall`: full exchange of fixed-size blocks.
-- **Ordering constraint:** collectives must be called in the same order everywhere; there are no tags to "disambiguate."
-
----
-
-## PX457 Implementation Checklist (C)
-
-1. Rank 0 reads `N` and broadcasts it with `MPI_Bcast`.
-2. Each rank computes a local sum; combine with `MPI_Reduce` and `MPI_Allreduce` and compare.
-3. Create a distributed array with `MPI_Scatter`, locally modify, then `MPI_Gather` to reconstruct on root.
-4. Demonstrate `MPI_Alltoall` by transposing a block-partitioned vector/matrix layout.
-5. Add a deliberate collective-order bug (swap two `MPI_Bcast` calls on one rank) and explain the observed mismatch, referencing the lecture's example.
+The communicator has so far been `MPI_COMM_WORLD`. [Communicators and topologies](/notes/px457/mpi-communicators) lets us restrict a collective to a row, distinguish independent conversations and express geometric neighbours.
