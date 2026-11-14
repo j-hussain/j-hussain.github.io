@@ -1,0 +1,12 @@
+.contents > blockquote {
+    margin: 0 0 2.5rem;
+    padding-left: 1.25rem;
+    border-left: 2px solid var(--sci-accent);
+    font-size: 0.95rem;
+    line-height: 1.8;
+}
+
+.contents > blockquote p:last-child {
+    font-size: 0.82rem;
+    color: var(--muted-color);
+}

@@ -1,0 +1,101 @@
+---
+title: Scientific components
+---
+
+This development gallery is rendered through the same MDX compiler as the pilot.
+
+## Definitions and linked representations
+
+A <Term definition="The ratio of the largest to the smallest nonzero singular value, for an invertible matrix.">condition number</Term> measures relative sensitivity. For an invertible matrix, $\kappa_2(A)=\sigma_1/\sigma_n$.
+
+<SVDExplanation />
+
+## Figure widths
+
+<Figure id="normal" title="Normal width" caption="The unit circle has radius one.">
+
+$$x^2+y^2=1$$
+
+</Figure>
+
+<Figure
+    id="breakout"
+    size="breakout"
+    title="Breakout width"
+    caption="A diagonal linear map sends a unit circle to an ellipse with semiaxes 1 and 0.4."
+>
+    <svg viewBox="0 0 600 180" role="img" aria-label="Unit circle transformed to ellipse">
+        <circle cx="140" cy="90" r="65" fill="none" stroke="currentColor" />
+        <path d="M245 90H335L325 80M335 90L325 100" fill="none" stroke="currentColor" />
+        <ellipse cx="460" cy="90" rx="65" ry="26" fill="none" stroke="currentColor" />
+    </svg>
+</Figure>
+
+<Sidenote>
+    Margin on a large desktop; inline at narrower widths. This is the sole sidenote implementation in this checkout.
+</Sidenote>
+
+## Pilot: wide figure, prediction and steps
+
+## Week 1: coordinates and projection
+
+<HookeExperiment />
+
+<ModelFamilyExplorer />
+
+<ProjectionExplorer />
+
+<ParsevalDiagram />
+
+<OuterProductDiagram />
+
+<LeastSquaresDiagram />
+
+<AdjointDiagram />
+
+<PositivityDiagram />
+
+<CholeskyDiagram />
+
+## Week 2 experimental prototype
+
+<NoiseExperiment />
+
+## Direct primitive authoring
+
+<LinkedEquation>
+
+For a unit direction u, <LinkedTerm term="projection">P² = P</LinkedTerm>.
+
+<LinkedMark term="projection">Projecting a vector already on the line leaves it unchanged.</LinkedMark>
+
+</LinkedEquation>
+
+<PredictReveal
+    question="A unit vector u defines Px = ⟨u,x⟩u. What happens if we project Px again?"
+    choices={[
+        { id: "same", label: "It stays Px" },
+        { id: "twice", label: "It becomes 2Px" },
+    ]}
+    answer="same"
+    explanation={<p>Since ⟨u,u⟩ = 1, applying P twice gives ⟨u,x⟩u again. Thus P² = P.</p>}
+/>
+
+<Stepper
+    steps={[
+        { title: "Measure the first coordinate", content: <p>For x = (2, 1) and u = (1, 0), ⟨u,x⟩ = 2.</p> },
+        {
+            title: "Reconstruct on the line",
+            content: <p>Px = 2u = (2, 0). The residual (0, 1) is perpendicular to u.</p>,
+        },
+        { title: "Project once more", content: <p>The first coordinate remains 2, so P(Px) = (2, 0) = Px.</p> },
+    ]}
+/>
+
+## Footnotes and references
+
+The visual model is deliberately two-dimensional.[^model] See [Figure 1](#inverse-noise).
+
+[^model]: The general theorem in the lecture note includes rectangular and complex matrices.
+
+Reference: [Communicating with Interactive Articles](https://distill.pub/2020/communicating-with-interactive-articles/).

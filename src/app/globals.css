@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.citation-card {
+    max-height: min(560px, calc(100dvh - 100px));
+}
+@media (max-width: 1023px) {
+    .citation-card {
+        position: fixed;
+        left: 16px;
+        bottom: 80px;
+        width: calc(100vw - 32px) !important;
+        max-height: calc(100dvh - 180px);
+    }
+}
+
+@layer components {
+    /*
+     * When a citation is hovered or focused, the rest of the prose steps back so
+     * the mention is the only lit thing on the line. That contrast is what makes
+     * the pattern read; without it a bright pill just looks highlighted.
+     *
+     * Dims `color`, not `opacity` — a child cannot exceed its parent's opacity,
+     * so an opacity-dimmed container could never let the mention stay bright.
+     */
+    .cited-prose {
+        transition: color 180ms ease;
+    }
+    .cited-prose:has(button:hover),
+    .cited-prose:has(button:focus-visible),
+    /* Holds the dim while the cursor sits on an open card. */
+    .cited-prose:has([data-cited-open="true"]) {
+        color: color-mix(in srgb, var(--foreground-color) 32%, transparent);
+    }
+
+    /* Inline prose link: a faint underline that firms up on hover or focus. */
+    .ink-link {
+        color: var(--foreground-color);
+        text-decoration-line: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 4px;
+        text-decoration-color: color-mix(in srgb, var(--foreground-color) 28%, transparent);
+        transition: text-decoration-color 150ms ease;
+        outline: none;
+    }
+    .ink-link:hover,
+    .ink-link:focus-visible {
+        text-decoration-color: currentColor;
+    }
+    .ink-link:focus-visible {
+        outline: 1px solid color-mix(in srgb, var(--foreground-color) 28%, transparent);
+        outline-offset: 3px;
+        border-radius: 2px;
+    }
+}
+
+/* Every view transition sets data-transition on <html> to say which kind it is. */
+:root[data-transition]::view-transition-old(root),
+:root[data-transition]::view-transition-new(root) {
+    mix-blend-mode: normal;
+    animation-fill-mode: both;
+}
+
+/* Opening a project from the strip carries on its sideways motion: the strip drifts left while the project page slides
+   in over it from the right. Neither half fades, so the canvas behind never shows through. */
+:root[data-transition="forward"]::view-transition-old(root),
+:root[data-transition="forward"]::view-transition-new(root),
+:root[data-transition="back"]::view-transition-old(root),
+:root[data-transition="back"]::view-transition-new(root) {
+    animation-duration: 0.65s;
+    animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
+}
+:root[data-transition="forward"]::view-transition-old(root) {
+    animation-name: vt-drift-left;
+}
+:root[data-transition="forward"]::view-transition-new(root) {
+    animation-name: vt-slide-in;
+    box-shadow: -24px 0 48px rgb(0 0 0 / 0.3);
+}
+/* Going back plays it in reverse: the project page slides off to the right, on top, uncovering the strip. */
+:root[data-transition="back"]::view-transition-old(root) {
+    z-index: 1;
+    animation-name: vt-slide-out;
+    box-shadow: -24px 0 48px rgb(0 0 0 / 0.3);
+}
+:root[data-transition="back"]::view-transition-new(root) {
+    animation-name: vt-drift-in;
+    box-shadow: none;
+}
+@keyframes vt-drift-left {
+    to {
+        transform: translateX(-30%);
+    }
+}
+@keyframes vt-slide-in {
+    from {
+        transform: translateX(100%);
+    }
+}
+@keyframes vt-slide-out {
+    to {
+        transform: translateX(100%);
+    }
+}
+@keyframes vt-drift-in {
+    from {
+        transform: translateX(-30%);
+    }
+}

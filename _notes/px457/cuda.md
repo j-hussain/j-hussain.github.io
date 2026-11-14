@@ -3,237 +3,160 @@ layout: page
 title: "Measuring and Accelerating: CUDA"
 ---
 
-# PX457 — Lecture 16 Notes
+A million independent array updates seem ideal for parallelism. Launching a million operating-system threads would be expensive; a GPU provides a different execution model for that fine-grained work. CUDA exposes a hierarchy of lightweight threads, cooperating blocks and host-controlled launches. The question remains familiar: who owns each output, where do its inputs live, and which dependencies require synchronisation?
 
-### *GPU Programming with CUDA (CUDA-01: Concepts + Minimal CUDA C)*
+This chapter follows the source's Lecture 16. It builds on [SIMD and locality](/notes/px457/memory-architecture#models), [scope and barriers](/notes/px457/openmp-variables-synchronisation#synchronisation), and [completion-aware measurement](/notes/px457/metrics#runtime).
 
----
+<h2 id="execution">1. Many logical threads, fewer resident execution resources</h2>
 
-## Conceptual Focus
+CUDA's general-purpose platform grew from programmable graphics, whose pixel and vertex operations supplied abundant data-parallel work. Introduced in 2007, CUDA combines language extensions, runtime APIs and a compiler toolchain for NVIDIA GPUs.
 
-CUDA introduces a different parallel paradigm to OpenMP/MPI:
+A **grid** is the collection of threads in a kernel launch. A **block** is a group of threads that can cooperate through block-local shared memory and barriers. Hardware schedules blocks onto streaming multiprocessors (SMs); resources such as registers, shared memory and resident-thread limits constrain how many can run at once. Blocks can execute in any order, so an ordinary kernel must not require all blocks to be resident simultaneously.
 
-- **CPU model:** fewer, independent MIMD cores; performance often hinges on caching and branch prediction.
-- **GPU model:** massive throughput via **hierarchical SIMT** (Single-Instruction, Multiple-Thread) and oversubscription; performance hinges on occupancy and memory access patterns.
+Threads are scheduled in groups called **warps**, currently 32 threads on NVIDIA CUDA devices. SIMT, single-instruction multiple-thread, presents per-thread state while issuing operations to active lanes. Divergent branches within a warp can require separate execution of different paths. Volta's independent thread scheduling means programs must not assume implicit warp synchrony; use documented warp/block synchronisation for communication.
 
-A GPU thrives when you give it a **very large volume of independent work** and a memory access pattern that the hardware can service efficiently.
+A GPU thread is therefore not a CPU core. A large grid provides work that can be scheduled as resources become available. More active warps can hide latency, but maximising occupancy alone is not a proof of better performance: spills, extra work and memory traffic may dominate.
 
----
+<h2 id="indexing">2. Prove ownership with an index formula</h2>
 
-# 1) GPUs: from graphics to general compute
+For one-dimensional blocks of $B$ threads and block index $b$, local thread $q\in[0,B)$ has global logical index
 
-## 1.1 Why GPUs exist
+$$
+t=Bb+q.
+$$
 
-Computer graphics is fundamentally **data-parallel**: pixel/vertex computations can be performed independently over huge arrays. This drove hardware evolution from fixed-function accelerators to programmable pipelines and finally to general compute platforms.
+A one-element-per-thread kernel checks the array bound:
 
-## 1.2 CUDA's role
-
-CUDA (introduced 2007) provides direct general-purpose access to GPU compute and memory from C/C++ without needing a graphics pipeline. CUDA is a hardware/software stack: language extensions, runtime library, and a specialised compiler toolchain.
-
----
-
-# 2) GPU execution model: Hierarchical SIMT
-
-## 2.1 Grid → Blocks → Threads
-
-CUDA decomposes work into a hierarchy:
-
-- **Grid:** all threads launched for a kernel call (analogy: all MPI ranks in `MPI_COMM_WORLD`).
-- **Thread Block:** a cooperating group of threads that can synchronise locally (analogy: an OpenMP parallel region / team).
-- **Thread:** basic unit of execution (analogy: one OpenMP thread / one MPI process in the "single worker" sense).
-
-CUDA provides builtin variables so each thread can compute its unique global index: `blockIdx`, `blockDim`, `threadIdx`.
-
-## 2.2 Warps and lockstep execution
-
-Hardware schedules threads in groups of **32** called **warps**. Threads in a warp execute in SIMT lockstep.
-
-### Thread divergence (performance hazard)
-
-If threads in the same warp take different branches (`if/else`), the warp must serialise those branches in the worst case. This is qualitatively different from CPU threading where threads are more independent.
-
-The lecture notes that Volta (2017) introduced **Independent Thread Scheduling**, improving flexibility and correctness properties, but divergence can still degrade performance substantially.
-
-## 2.3 Correct mental model
-
-Do not think "each GPU thread = CPU core". Instead:
-
-- Optimisation is about **throughput**, not single-task latency.
-- Memory is slow; hide latency via **occupancy** (lots of active threads) rather than relying on deep caches.
-- Synchronisation is restricted (fast within block/warp), not arbitrary global locking.
-
----
-
-# 3) Minimal structure of a CUDA C program
-
-## 3.1 Host–Device workflow
-
-A CUDA program still *runs on the CPU (host)* and offloads work to the GPU (device) over the PCI bus:
-
-1. **Allocate** host memory and device memory
-2. **Copy** inputs Host → Device
-3. **Launch kernel** on the GPU
-4. **Copy** results Device → Host
-5. **Free** host/device allocations
-
-## 3.2 Minimal skeleton (from slides)
-
-The lecture provides a canonical minimal program layout. Key points:
-
-- Device allocations via `cudaMalloc`.
-- Transfers via `cudaMemcpy`.
-- Kernel launched with `kernel<<<blocks, threads>>>(...)`.
-- Kernel launch is **asynchronous**; `cudaDeviceSynchronize()` blocks until completion.
-- A `cudaMemcpy` Device → Host can also act as an **implicit synchronisation** barrier for operations in the default stream.
-
----
-
-# 4) Kernels and indexing
-
-## 4.1 Kernel qualifiers and calling context
-
-The lecture distinguishes function qualifiers:
-
-- `__global__`: kernel callable from host, executes on device
-- `__device__`: callable from device only
-- `__host__ __device__`: callable from both (useful for small utility functions)
-
-## 4.2 Global thread index
-
-The standard 1D global ID pattern:
-
-tid = blockDim.x × blockIdx.x + threadIdx.x
-
-Use `tid` to map each thread to a data element, typically with a bounds check:
-
-```c
-if (tid < N) { /* operate on a[tid] */ }
+```cpp
+__global__ void square_once(float *a, size_t N) {
+    size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < N) a[i] *= a[i];
+}
 ```
 
-This is the CUDA analogue of "rank decides which data it owns" in MPI.
+For $N>0$, choose $G=\lceil N/B\rceil$ blocks; the final block can have threads with no element. Choose a supported block width, often a multiple of warp size, and verify device and kernel limits rather than treating a common 1024-thread maximum as universal.
 
----
+### Grid-stride loops decouple work size from launch size
 
-# 5) Launch configuration and asynchrony
+Let $S=BG$ be the total logical threads. Thread $t$ owns
 
-## 5.1 Blocks and threads
+$$
+t,\ t+S,\ t+2S,\ldots <N.
+$$
 
-The lecture's standard choice: `THREADS_PER_BLOCK` should be a multiple of 32 (warp size), up to 1024 threads per block.
-
-Typical calculation:
-
-BLOCKS_PER_GRID = ⌈N / THREADS_PER_BLOCK⌉
-
-## 5.2 Kernel launch is asynchronous
-
-The `<<<...>>>` launch returns before the kernel finishes. Use:
-
-- `cudaDeviceSynchronize()` explicitly, or
-- rely on a blocking `cudaMemcpy` back to host which implies synchronisation in the default stream.
-
----
-
-# 6) Grid-stride loop (robust kernel structure)
-
-## 6.1 Motivation
-
-A "one thread per element" kernel tightly couples `N` and launch config, and it becomes fragile as `N` varies or grows; it also fails to embrace the "oversubscribe the GPU" strategy.
-
-## 6.2 Pattern
-
-Decouple `N` from launch config by looping inside the kernel:
-
-stride = blockDim.x × gridDim.x
-
-Each thread processes indices:
-
-i = tid, tid + stride, tid + 2×stride, ...
-
-This is the default "production" shape for many CUDA kernels.
-
----
-
-# 7) GPU memory hierarchy (what matters immediately)
-
-## 7.1 Streaming Multiprocessors and memory types
-
-An SM is the core execution unit; resources constrain how many blocks/threads can run concurrently. The lecture lists:
-
-- **L2 cache** (global, automatic)
-- **Shared memory** (fast R/W within a block)
-- **Constant memory** (fast read-only broadcast when accessed uniformly)
-- **Registers** (per-thread local variables)
-
-## 7.2 Coalesced global memory access
-
-Even though L2 caching is automatic, you must pay attention to **coalescence**: neighbouring threads in a warp should access neighbouring memory locations so hardware can combine requests efficiently.
-
-The simple `a[i] = a[i]*a[i]` pattern is naturally coalesced; more complex access patterns (e.g., particle transport / irregular Monte Carlo) are harder to coalesce.
-
----
-
-# 8) Shared memory (block-level cooperation)
-
-## 8.1 What it is
-
-Shared memory is:
-
-- Visible to threads **within a block only**
-- Lives for the lifetime of the block
-- Declared with `__shared__` inside a kernel.
-
-Synchronisation primitive:
-
-- `__syncthreads()` acts as a block barrier.
-
-## 8.2 Example concept (from slides)
-
-The lecture shows a (simplified) block-local accumulation using shared memory plus atomic operations, then a single thread writes result to global memory.
-
-Key takeaway: shared memory is where you implement **cooperation** and **reuse** within a block to reduce expensive global memory traffic.
-
----
-
-# 9) Constant memory (read-only broadcast)
-
-## 9.1 Properties
-
-Constant memory:
-
-- Declared at file scope with `__constant__`
-- Initialised from host via `cudaMemcpyToSymbol()`
-- Small (64KB per translation unit per slides)
-- Fast only when threads in a warp read the **same address** at the same time (broadcast)
-
-The lecture's example is a small convolution/filter where all threads reuse the same weights array.
-
----
-
-# 10) Compiling CUDA code (tooling reality)
-
-CUDA source usually uses `.cu` and is compiled with `nvcc`. The lecture shows:
-
-```bash
-nvcc -arch=sm_86 cuda_sq.cu -o cuda_sq
+```cpp
+__global__ void square(float *a, size_t N) {
+    size_t t = (size_t)blockIdx.x * blockDim.x + threadIdx.x;
+    size_t stride = (size_t)blockDim.x * gridDim.x;
+    for (size_t i = t; i < N; i += stride) a[i] *= a[i];
+}
 ```
 
-The architecture flag selects the GPU compute capability target, influencing available features and instruction set.
+Assume index additions remain representable. Every valid index has a unique decomposition $i=t+kS$ with $0\le t<S$ by Euclidean division. Thus every element is updated exactly once, provided the launch has positive stride. This is an ownership proof, not just an indexing idiom.
 
----
+<Figure id="px457-grid-stride" title="Four threads can own twelve elements" caption="For stride S = 4, each thread owns one residue class modulo four. Every column is one pass through the grid-stride loop. Adjacent threads still access adjacent elements within a pass. The tiny grid illustrates ownership; it is not a recommended performance configuration.">
+<svg viewBox="0 0 360 190" role="img" aria-label="Thread zero owns 0 4 8; one owns 1 5 9; two owns 2 6 10; three owns 3 7 11" style={{width: "100%", height: "auto"}}>
+<g fill="currentColor" fontSize="13" textAnchor="middle"><text x="35" y="25">thread</text><text x="130" y="25">pass 0</text><text x="225" y="25">pass 1</text><text x="320" y="25">pass 2</text></g>
+<path d="M78 35V179 M95 35H345" fill="none" stroke="currentColor" strokeDasharray="3 4"/>
+<g fill="currentColor" fontSize="14" textAnchor="middle"><text x="35" y="62">0</text><text x="130" y="62">0</text><text x="225" y="62">4</text><text x="320" y="62">8</text><text x="35" y="96">1</text><text x="130" y="96">1</text><text x="225" y="96">5</text><text x="320" y="96">9</text><text x="35" y="130">2</text><text x="130" y="130">2</text><text x="225" y="130">6</text><text x="320" y="130">10</text><text x="35" y="164">3</text><text x="130" y="164">3</text><text x="225" y="164">7</text><text x="320" y="164">11</text></g>
+</svg>
+</Figure>
 
-## Summary
+Follow the residue classes through successive passes. A partial final pass tests whether the bound check preserves ownership without accessing an invalid element.
 
-- CUDA uses **hierarchical SIMT**: grid → blocks → threads; hardware executes warps of 32 threads in lockstep. Divergence within a warp can serialise branches and hurt performance.
-- CUDA programs follow a host-controlled pipeline: allocate → copy H→D → launch kernel (async) → copy D→H (sync) → free.
-- Kernel launch configuration should be thought of as "give the GPU enough threads" (oversubscribe), not "exactly one thread per element"; the **grid-stride loop** is the robust idiom.
-- Performance is dominated by memory behaviour: aim for **coalesced** access; use **shared memory** for intra-block reuse; use **constant memory** for read-only broadcast patterns.
+<PX457Animation scene="grid" />
 
----
+<h2 id="launch">3. A launch starts work; it does not finish the measurement</h2>
 
-## PX457 Implementation Checklist (C/CUDA)
+`__global__` marks a kernel, normally launched from host code; `__device__` marks a device-callable function, and `__host__ __device__` requests separate host/device versions. A discrete-device workflow allocates device storage, copies input, launches, obtains completed results, and frees storage. Integrated/unified-memory systems change how transfers are managed, not the need to respect data availability.
 
-1. Implement `square()` twice: (i) single-pass `tid < N`, (ii) **grid-stride**; test varying (N) without changing launch config.
-2. Add a branch in the kernel that depends on `tid` parity; time it and explain in terms of **warp divergence** (SIMT).
-3. Create a kernel that reads `a[perm[tid]]` (indirect addressing) and compare to contiguous access; interpret via **coalescence**.
-4. Implement a small stencil/filter with weights stored in **constant memory** (`__constant__` + `cudaMemcpyToSymbol`) and explain why it can be fast when warp accesses are uniform.
-5. Use `cudaDeviceSynchronize()` deliberately to separate kernel time from transfer time; comment on which operations are synchronous vs asynchronous.
+The following host function applies the grid-stride kernel to an existing host array. It checks every runtime call, skips an empty problem, and separates launch errors from execution completion:
+
+```cpp
+#include <cuda_runtime.h>
+#include <cstdio>
+#include <cstdlib>
+
+static void check(cudaError_t err) {
+    if (err != cudaSuccess) {
+        std::fprintf(stderr, "%s\n", cudaGetErrorString(err));
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+/* square() above must be visible in this .cu translation unit. */
+void square_on_gpu(float *host, size_t N) {
+    if (N == 0) return;
+    /* Preconditions: host has N elements; N*sizeof(float) fits size_t. */
+    size_t bytes = N * sizeof(float);
+    float *device = nullptr;
+    check(cudaMalloc((void **)&device, bytes));
+    check(cudaMemcpy(device, host, bytes, cudaMemcpyHostToDevice));
+    square<<<128, 256>>>(device, N); /* example: check target supports it */
+    check(cudaGetLastError());
+    check(cudaDeviceSynchronize());
+    check(cudaMemcpy(host, device, bytes, cudaMemcpyDeviceToHost));
+    check(cudaFree(device));
+}
+```
+
+This is a function plus kernel, not a standalone executable: add a `main` that constructs input and checks the result. Compile `.cu` code with `nvcc`; for example, `nvcc -arch=sm_86 square.cu -o square` selects an appropriate target only if the actual device/toolchain supports that architecture. A launch returns asynchronously with respect to host execution. `cudaDeviceSynchronize` establishes completion and reports deferred execution errors.
+
+For kernel-only timing, use CUDA events in the relevant stream or a host timing interval with deliberate synchronisation. For end-to-end timing, include the copies and allocation if they are part of actual use. A synchronous device-to-host copy waits for the relevant data transfer; do not generalise it into a barrier for arbitrary unrelated streams. The [runtime's synchronisation rules](https://docs.nvidia.com/cuda/archive/12.6.3/cuda-runtime-api/api-sync-behavior.html) distinguish host/device directions, memory types and asynchronous forms.
+
+<h2 id="memory">4. Locality reappears as coalescing and reuse</h2>
+
+A warp's adjacent lanes should, where possible, access adjacent suitably aligned elements. Hardware can then serve requests with fewer memory transactions: **coalescing**. The grid-stride square preserves this within each pass. An indirect access `a[perm[i]]` can scatter addresses and increase transactions. This is related to [CPU spatial locality](/notes/px457/memory-architecture#locality), but the unit of comparison is now the addresses requested together by a warp.
+
+To see coalescing, ask a question about a group of addresses. The next view uses eight illustrative active lanes and a declared segment size so that every requested segment can be counted.
+
+<PX457Animation scene="coalescing" />
+
+| Storage                  | Scope and useful role                                               |
+| ------------------------ | ------------------------------------------------------------------- |
+| Registers                | Per-thread values; finite capacity, spills can use slower memory    |
+| Global memory and caches | Device-accessible arrays; caches do not remove traffic costs        |
+| Shared memory            | Block-local cooperation and reuse, allocated for a block's lifetime |
+| Constant memory          | Read-only-to-kernel data with efficient same-address warp broadcast |
+
+For example, a block can sum its inputs into shared memory, synchronise, then reduce partials:
+
+```cpp
+/* Launch exactly 256 threads per block; out has gridDim.x elements. */
+__global__ void block_sums(const float *a, float *out, size_t N) {
+    __shared__ float s[256];
+    unsigned int q = threadIdx.x;
+    size_t i = (size_t)blockIdx.x * blockDim.x + q;
+    s[q] = (i < N) ? a[i] : 0.0f;
+    __syncthreads();
+    for (unsigned int step = 128; step > 0; step /= 2) {
+        if (q < step) s[q] += s[q + step];
+        __syncthreads();
+    }
+    if (q == 0) out[blockIdx.x] = s[0];
+}
+```
+
+Use enough blocks to cover the inputs in this **single-pass** reduction kernel; unlike `square`, it has no grid-stride input loop. All threads reach each barrier, including those outside the input range, which contribute zero. The host or a later kernel must combine block outputs. Shared-memory atomic accumulation is another possible design, but the tree shows explicit producer–consumer phases and changes summation association. `__syncthreads()` does not synchronise different blocks. Never return some block threads before a barrier that the remaining threads require.
+
+A filter can instead share coefficients through constant memory:
+
+```cpp
+__constant__ float weights[3];
+/* Host: cudaMemcpyToSymbol(weights, hweights, sizeof hweights); */
+```
+
+When all lanes read the same coefficient at a given loop step, broadcast is favourable. Distinct addresses can require serialised requests. Constant memory is typically 64 KiB **per device**, not per translation unit; query device properties. The [CUDA best-practices guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/) discusses both access patterns and their limitations.
+
+### Exercises and continuation
+
+1. Verify unique grid-stride ownership for $N=0,1,S-1,S,S+1$ and a nonmultiple of block size. Compare against the serial square.
+2. Compare one-element and grid-stride kernels with completion-aware timing. Report transfers separately as well as end-to-end.
+3. Introduce parity-dependent work, then indirect addresses. Explain divergence and memory scattering separately; do not assume the compiler must implement a branch.
+4. Test block sums with a partial final block. Why must inactive input threads still participate in barriers?
+
+CUDA exposes how work maps to hardware, but scientists need not implement every kernel themselves. [Higher abstractions](/notes/px457/higher-abstractions) asks which mathematical operations should be delegated to libraries and how a computational graph can supply derivatives efficiently.
+
+### Reference
+
+[NVIDIA's SIMT kernel guide](https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html) documents the execution hierarchy. Use documentation matching the installed toolkit and target device.

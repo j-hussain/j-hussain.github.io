@@ -1,220 +1,127 @@
 ---
 layout: page
-title: "MPI: Point-to-Point Connection"
+title: "MPI: Point-to-Point Communication"
 ---
 
-### *MPI-02 : Point-to-Point Communication*
+Two ranks must exchange their boundary arrays. Each sends first and then receives. The program works for a small array, then hangs for a larger one. Nothing about the mathematics changed. What changed was an assumption that a send would always find enough buffering to return.
 
----
+This chapter extends the [separate-address-space model](/notes/px457/mpi-intro#processes) with three precise questions: which receive matches a message, when may a buffer be reused, and can the calls make progress without circular waiting?
 
-## Conceptual Focus
+<h2 id="matching">1. An envelope identifies the conversation</h2>
 
-OpenMP handled **implicit data sharing** through memory.
-
-MPI requires **explicit message exchange** between *processes*.
-
-Two fundamental communication styles:
-
-| Category | Description | Typical Use |
-| --- | --- | --- |
-| **Point-to-point** | One sender → one receiver | Direct coordination |
-| **Collective** | One-to-many, many-to-one, all-to-all | Reductions, broadcasts (next lecture) |
-
-This lecture focuses on the **point-to-point** model:
-
-`rank 0 → rank 1` or more generally `srce ↔ dest`.
-
----
-
-## MPI Send/Receive Primitives
-
-MPI offers several send modes, each in *blocking* and *non-blocking* form.
-
-| Send Mode | Blocking | Non-blocking | Semantics |
-| --- | --- | --- | --- |
-| **Standard** | `MPI_Send` | `MPI_Isend` | Buffered or synchronous depending on message size |
-| **Synchronous** | `MPI_Ssend` | `MPI_Issend` | Sender waits for receiver "ready" ack |
-| **Buffered** | `MPI_Bsend` | `MPI_Ibsend` | Sender copies to user-supplied buffer, returns immediately |
-| **Ready** | `MPI_Rsend` | `MPI_Irsend` | Requires receiver to have already posted receive |
-
-Receivers use:
+A message has a payload and an envelope: source, destination, tag and communicator context. Ranks are interpreted within the communicator. A receive's source is the **sender's rank**, not the destination argument the sender used.
 
 ```c
-MPI_Recv(void *buf, int count, MPI_Datatype type,
-         int srce, int tag, MPI_Comm comm,
-         MPI_Status *status);
-```
-
----
-
-## Basic Send Example
-
-```c
+/* Executed on rank 0; the communicator has at least two ranks. */
 int a = 42;
 MPI_Send(&a, 1, MPI_INT, 1, 999, MPI_COMM_WORLD);
 ```
 
-### Parameters
-
-| Argument | Meaning |
-| --- | --- |
-| `&a` | Address of data (array or variable) |
-| `1` | Number of elements (not bytes) |
-| `MPI_INT` | Datatype (portable MPI constant) |
-| `1` | Destination rank |
-| `999` | *Tag* to identify the message |
-| `MPI_COMM_WORLD` | Communicator both ranks share |
-
----
-
-## Receive Example
-
 ```c
+/* Executed on rank 1. */
 int b;
-MPI_Status stat;
-MPI_Recv(&b, 1, MPI_INT,
-         0, 999, MPI_COMM_WORLD, &stat);
+MPI_Status status;
+MPI_Recv(&b, 1, MPI_INT, 0, 999, MPI_COMM_WORLD, &status);
 ```
 
-- `srce = 0` must match sender's destination.
-- `tag = 999` must match sender's tag.
-- Wildcards: `MPI_ANY_SOURCE`, `MPI_ANY_TAG`.
-- After completion, `stat.MPI_SOURCE` and `stat.MPI_TAG` contain actual values.
-- `MPI_STATUS_IGNORE` can be used if the status isn't needed.
+The count is elements, not bytes. Corresponding basic C datatypes include `MPI_CHAR`, `MPI_INT`, `MPI_LONG`, `MPI_FLOAT` and `MPI_DOUBLE`. Sender and receiver must supply compatible type signatures; receive capacity must be sufficient. Derived datatypes permit different memory layouts, but are not needed here.
 
----
+`MPI_ANY_SOURCE` and `MPI_ANY_TAG` broaden matching; `status.MPI_SOURCE` and `status.MPI_TAG` identify the actual match. Use `MPI_STATUS_IGNORE` when status is unnecessary. Wildcards are convenient but can introduce nondeterministic choice between available messages.
 
-## Message "Envelope"
+Within an ordered single-threaded sender, MPI's [nonovertaking rule](https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node68.htm) constrains messages that could match the same receive. It is not a global arrival-order guarantee across sources or distinct tags.
 
-Every message has:
+A correct payload is insufficient when its envelope belongs to a different conversation. Try a matching and a mismatched tag while holding the participants and context fixed.
 
-1. **Data payload** → the buffer and datatype.
-2. **Envelope metadata** → source, destination, tag, communicator.
+<PX457Animation scene="envelope" />
 
-MPI automatically matches senders to receivers using this envelope.
+<h2 id="completion">2. Blocking means a local completion condition</h2>
 
----
+| Send mode   | Blocking / nonblocking     | What the mode commits to                                                          |
+| ----------- | -------------------------- | --------------------------------------------------------------------------------- |
+| Standard    | `MPI_Send` / `MPI_Isend`   | May buffer or wait for a matching receive; do not rely on buffering               |
+| Synchronous | `MPI_Ssend` / `MPI_Issend` | Send completion requires a matching receive to have started receiving             |
+| Buffered    | `MPI_Bsend` / `MPI_Ibsend` | Uses sufficient attached buffering; buffer sizing is the application's obligation |
+| Ready       | `MPI_Rsend` / `MPI_Irsend` | Valid only if the matching receive is already posted                              |
 
-## Supported Datatypes (C)
+A completed blocking send permits reuse of the send buffer. It does **not** generally mean the receiver has returned from its receive. A completed receive makes the received data available locally. Buffered sends are not guaranteed instantaneous, and insufficient attached space is an error rather than a portable fallback. Ready sends require a proof of the precondition, not a guess about timing.
 
-| C Type | MPI Equivalent |
-| --- | --- |
-| `char` | `MPI_CHAR` |
-| `int` | `MPI_INT` |
-| `long` | `MPI_LONG` |
-| `float` | `MPI_FLOAT` |
-| `double` | `MPI_DOUBLE` |
+<h2 id="example">3. Many senders, one receiver</h2>
 
-Use these for *portability* across architectures.
-
----
-
-## Worked Example — Hello MPI (Exchange)
+The original square-of-rank example separates computation from communication:
 
 ```c
 #include <stdio.h>
 #include <mpi.h>
 
 int main(int argc, char **argv) {
-    int my_rank, p, a;
-    MPI_Status status;
-
+    int rank, p, a;
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &p);
 
-    if (my_rank != 0) {
-        a = my_rank * my_rank;
+    if (rank != 0) {
+        a = rank * rank;
         MPI_Send(&a, 1, MPI_INT, 0, 999, MPI_COMM_WORLD);
     } else {
-        for (int srce = 1; srce < p; ++srce) {
-            MPI_Recv(&a, 1, MPI_INT, srce, 999,
-                     MPI_COMM_WORLD, &status);
-            printf("Proc %d sent %d\n", srce, a);
+        for (int src = 1; src < p; ++src) {
+            MPI_Recv(&a, 1, MPI_INT, src, 999,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            printf("Rank %d sent %d\n", src, a);
         }
     }
-
     MPI_Finalize();
     return 0;
 }
 ```
 
-Compile → `mpicc -o mpi_hello mpi_hello.c`
+Assume ranks are small enough that `rank*rank` fits in `int`. Compile with `mpicc squares.c -o squares` and launch with `mpiexec -np 4 ./squares`. Rank zero requests sources in increasing order; a later sender may wait, but there is no cycle because rank zero eventually posts each required receive. With one rank, the receive loop is empty.
 
-Run → `mpiexec -np 4 ./mpi_hello`
+<h2 id="deadlock">4. Draw the wait-for cycle</h2>
 
----
-
-## Deadlock in Point-to-Point
-
-### Problem
-
-Two processes both send before either receives:
+For **exactly two ranks**, `partner=1-rank` identifies the peer:
 
 ```c
-int partner = 1 - my_rank;
 MPI_Send(a, n, MPI_FLOAT, partner, 999, MPI_COMM_WORLD);
-MPI_Recv(b, n, MPI_FLOAT, partner, 999, MPI_COMM_WORLD, &stat);
+MPI_Recv(b, n, MPI_FLOAT, partner, 999,
+         MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 ```
 
-If both `MPI_Send`s choose **synchronous** mode → both block forever.
+If each standard send waits for a matching receive, neither rank reaches its receive. The implementation has not changed `MPI_Send` into another API mode; standard-mode semantics simply permit this lack of buffering.
 
-This is **deadlock** — each process waits for the other's receive.
+<Figure id="px457-deadlock" title="A cycle of prerequisites" caption="Both ranks require the other rank to post a receive before their send can complete. Neither reaches that receive. Small-message buffering can hide the cycle, so success with a small buffer is not a correctness argument.">
+<svg viewBox="0 0 360 145" role="img" aria-label="Rank zero waiting in send for rank one's receive, and rank one waiting in send for rank zero's receive, forming a cycle" style={{width: "100%", height: "auto"}}>
+<g fill="none" stroke="currentColor"><rect x="10" y="30" width="130" height="60"/><rect x="220" y="30" width="130" height="60"/><path d="M142 45H215 M208 39L215 45L208 51 M218 77H145 M152 71L145 77L152 83"/></g>
+<g fill="currentColor" fontSize="13"><text x="27" y="52">rank 0: send</text><text x="27" y="75">receive later</text><text x="237" y="52">rank 1: send</text><text x="237" y="75">receive later</text><text x="40" y="125">each waits for the other's later action</text></g>
+</svg>
+</Figure>
 
----
-
-### Ways to Avoid Deadlock
-
-| Strategy | Example | Note |
-| --- | --- | --- |
-| **Re-order calls** | Rank 0 sends first, Rank 1 receives first | simplest fix |
-| **Use non-blocking** | `MPI_Isend` + `MPI_Irecv` | overlap communication/computation |
-| **Use `MPI_Bsend`** | explicit buffer | sender never waits |
-| **Use `MPI_Sendrecv`** | combined safe exchange | recommended pattern |
-
----
-
-## Safe Two-Way Exchange
+For a pair, ordering one rank receive-then-send and the other send-then-receive breaks the cycle. A more direct expression is:
 
 ```c
-MPI_Sendrecv(a, m, MPI_FLOAT, dest, send_tag,
-             b, n, MPI_FLOAT, srce, recv_tag,
-             MPI_COMM_WORLD, &status);
+MPI_Sendrecv(a, n, MPI_FLOAT, partner, 999,
+             b, n, MPI_FLOAT, partner, 999,
+             MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 ```
 
-- Merges `Send` + `Recv` into one call.
-- Avoids deadlock automatically.
-- `srce` and `dest` may be identical; `a` and `b` must not alias.
+`MPI_Sendrecv` combines the two operations so this matching exchange need not depend on buffering. It is not an atomic transaction, nor does it repair mismatched ranks, tags or counts. Send and receive buffers must be disjoint; `MPI_Sendrecv_replace` is a different API for a shared buffer.
 
----
+In a ring, send to `(rank+1)%p` and receive from `(rank+p-1)%p`. All ranks can call `MPI_Sendrecv` with these neighbours and compatible tags. The same pattern will implement Cartesian halo transfers.
 
-## Blocking vs Non-blocking (Preview)
+Watch the two schedules unfold. The important change is the availability of a matching receive, rather than the apparent speed of a small test message.
 
-| Type | Functions | Behaviour |
-| --- | --- | --- |
-| **Blocking** | `MPI_Send`, `MPI_Recv` | Return when operation complete |
-| **Non-blocking** | `MPI_Isend`, `MPI_Irecv` | Return immediately; must `MPI_Wait` later |
+<PX457Animation scene="deadlock" />
 
-Non-blocking calls enable *overlap* of communication and computation — explored in later lectures.
+<h2 id="requests">5. Initiation and completion can be separate</h2>
 
----
+`MPI_Isend` and `MPI_Irecv` initiate operations and return requests. Later wait/test calls establish completion. This can break blocking-order cycles **if all needed operations are posted before waiting**, and can expose useful overlap. Immediately waiting for an unmatchable send before posting its receive reproduces the dependency problem.
 
-## Summary
+The [nonblocking send documentation](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Isend.3.html) makes buffer lifetime central: do not modify the send data before completion; do not access incoming data before its receive completes. “Fire and forget” is an unsafe analogy. [Advanced MPI](/notes/px457/mpi-advanced) develops the full overlap pattern.
 
-| Concept | Key Idea | Analogy |
-| --- | --- | --- |
-| Point-to-point | Explicit messages between ranks | "Phone call" |
-| Tags | Distinguish multiple messages | Envelope label |
-| Blocking vs non-blocking | Completion semantics | Wait vs fire-and-forget |
-| Deadlock | Mutual blocking on synchronous sends | Two people both talking, neither listening |
-| `MPI_Sendrecv` | Atomic exchange | Safe two-way channel |
+### Exercises
 
----
+1. Turn the square-sender example into a ring using `MPI_Sendrecv`; check the received value against the source rank.
+2. For a two-rank experiment, replace sends with `MPI_Ssend` in the unsafe ordering. Use a timeout and explain the wait-for graph rather than treating a hang as a performance measurement.
+3. Explain why a standard send returning does not prove the receiver has used the value.
+4. Make a table of source, destination, tag and communicator for each message in your exchange before writing code.
 
-## PX457 Lab Checklist
-
-1. Modify the Hello-MPI example so each rank sends to `(rank + 1) % p`.
-2. Intentionally cause a deadlock using `MPI_Ssend` to observe behaviour.
-3. Replace with `MPI_Sendrecv` to fix it.
-4. Record timing with large messages to compare buffered vs synchronous behaviour.
-5. Summarise safety and performance trade-offs in your report.
+Point-to-point operations describe individual edges. [Collectives](/notes/px457/mpi-collective) express common communication patterns as a group operation.

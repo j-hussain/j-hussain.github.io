@@ -3,134 +3,37 @@ layout: page
 title: "MPI: Introduction"
 ---
 
-### *MPI-01 : Programming with MPI (Introduction & Basic Functions)*
+An OpenMP thread can read a shared array element once the appropriate ordering is established. A process on another node cannot dereference that element's address. The change from shared to distributed memory is therefore a change in the algorithm's obligations: **data ownership and data transfer become explicit**.
 
----
+MPI, the Message Passing Interface, is a standard for communication between processes. Implementations include Open MPI and MPICH. It can be used across nodes or between processes on the same node; “MPI” does not imply that every message crosses a network.
 
-## Conceptual Overview
+<h2 id="processes">1. Same program, separate state</h2>
 
-Whereas **OpenMP** parallelises threads within *one process* and a **shared memory space**,
+Most examples use **SPMD**, single program, multiple data. Every process starts the same executable, but rank-dependent control flow and different inputs give it different work. SPMD is a programming pattern; [MIMD](/notes/px457/memory-architecture#models) describes independently progressing instruction streams. The two are compatible.
 
-**MPI (Message Passing Interface)** coordinates *multiple processes*, each with its own memory.
+| Model       | Worker                | Ordinary storage                     | How another worker obtains a value  |
+| ----------- | --------------------- | ------------------------------------ | ----------------------------------- |
+| OpenMP here | Thread in one process | Shared or private according to scope | Shared loads, with correct ordering |
+| MPI here    | Process               | Separate address space               | Explicit communication              |
 
-| Model | Execution unit | Memory | Communication |
-| --- | --- | --- | --- |
-| **OpenMP** | Threads | Shared | Implicit load/store |
-| **MPI** | Processes | Distributed | Explicit message passing |
+If every rank declares `int a = 0`, there are $P$ independent objects called `a`. Setting rank zero's `a` to 42 does not update any other rank's object. Later MPI facilities can expose shared-memory or remote-memory windows, but those are explicit mechanisms beyond this introductory model.
 
-MPI programs are typically *SPMD* — **Single Program, Multiple Data** — all processes execute the same code but on different data partitions.
+A **communicator** supplies an ordered group of processes and a communication context. In our intracommunicator examples, a **rank** is an integer $r\in\{0,\ldots,P-1\}$ identifying a process **within that communicator**. The same process can have a different rank in another communicator. `MPI_COMM_WORLD` initially includes all processes in the World-model job.
 
----
+<Figure id="px457-address-spaces" title="One name does not imply one object" caption="All ranks run the same source, but each owns a separate a. A message copies a value into a receiver's object; it does not turn the objects into one shared variable. The drawing is logical and also applies to ranks placed on one node.">
+<svg viewBox="0 0 360 155" role="img" aria-label="Rank 0 has a equals 42, ranks 1 and 2 have a equals zero in separate address spaces; a message must carry 42 from rank zero to rank one" style={{width: "100%", height: "auto"}}>
+<g fill="none" stroke="currentColor"><rect x="5" y="20" width="105" height="75"/><rect x="127" y="20" width="105" height="75"/><rect x="249" y="20" width="105" height="75"/><path d="M58 102V128H178V102 M172 109L178 102L184 109" strokeDasharray="4 3"/></g>
+<g fill="currentColor" fontSize="13"><text x="25" y="45">rank 0</text><text x="25" y="73">a = 42</text><text x="147" y="45">rank 1</text><text x="147" y="73">a = 0</text><text x="269" y="45">rank 2</text><text x="269" y="73">a = 0</text><text x="70" y="150">explicit message</text></g>
+</svg>
+</Figure>
 
-## Architecture Recap
+Make the separation literal: changing one object should leave the other two untouched. A message is an additional event, not an automatic consequence of assignment.
 
-- **MIMD** = Multiple Instruction, Multiple Data
-    
-    → many CPUs running different instruction streams on separate data chunks.
-    
-- MPI targets clusters or HPC nodes connected via a **network interconnect**.
+<PX457Animation scene="address" />
 
-Each process:
+<h2 id="lifecycle">2. Initialise, identify, compute, finalise</h2>
 
-- Has its **own address space**.
-- Communicates by **sending and receiving messages**.
-- Is identified by a unique **rank** within a *communicator*.
-
----
-
-## MPI Essentials
-
-| Concept | Description |
-| --- | --- |
-| **MPI process** | An independent program instance launched by `mpiexec`. |
-| **Communicator** | A group of processes that can talk to each other. Default: `MPI_COMM_WORLD`. |
-| **Rank** | Unique integer ID ∈ [0, P − 1]. |
-| **SPMD pattern** | All ranks run same code; behaviour controlled by rank checks. |
-
-MPI is a **standard**, not a single library: implemented by **OpenMPI**, **MPICH**, Intel MPI, etc.
-
----
-
-## Why MPI?
-
-- Scales beyond a single machine or memory domain.
-- Handles problems too large for one node (e.g. weather models, AI training).
-- Portable across supercomputers and clusters.
-- Can be combined with OpenMP → *hybrid parallelism*.
-
----
-
-## Programming Model
-
-### Compilation
-
-```bash
-mpicc myprog.c    # wraps gcc and links MPI libraries
-```
-
-### Execution
-
-```bash
-mpiexec -np 4 ./a.out
-```
-
-→ launches 4 independent processes with ranks 0 – 3.
-
-Each process has **no shared variables** with the others.
-
----
-
-## Basic MPI Lifecycle
-
-### 1. Initialise
-
-```c
-#include <mpi.h>
-
-int main(int argc, char **argv) {
-    MPI_Init(&argc, &argv);   // Start MPI environment
-```
-
-- Must be called **before** any MPI function.
-- Usually takes `&argc`, `&argv` so MPI can strip runtime flags if needed.
-
----
-
-### 2. Query communicator
-
-```c
-int p, my_rank;
-MPI_Comm_size(MPI_COMM_WORLD, &p);      // total processes
-MPI_Comm_rank(MPI_COMM_WORLD, &my_rank); // this process's rank
-```
-
-All processes belong to `MPI_COMM_WORLD` by default.
-
----
-
-### 3. Do parallel work
-
-```c
-printf("Hello PX457 from rank %d of %d\n", my_rank, p);
-```
-
-Each process prints independently — output order is undefined.
-
----
-
-### 4. Finalise
-
-```c
-MPI_Finalize();   // Tear down MPI environment
-return 0;
-}
-```
-
-After this call, no MPI communication is allowed.
-
----
-
-## Full "Hello World" Example
+The World-model program begins with `MPI_Init` (or the threaded form introduced later) and ends with `MPI_Finalize`. Initialise before communication or communicator queries. Some inquiry routines are legal before initialisation or after finalisation; the rule is not literally “no MPI function may be called”.
 
 ```c
 #include <stdio.h>
@@ -138,65 +41,51 @@ After this call, no MPI communication is allowed.
 #include <mpi.h>
 
 int main(int argc, char **argv) {
-    int my_rank, p;
-
+    int rank, p;
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &p);
-
-    printf("Hello PX457 from rank %d of %d\n", my_rank, p);
-
+    printf("Hello PX457 from rank %d of %d\n", rank, p);
     MPI_Finalize();
     return EXIT_SUCCESS;
 }
 ```
 
-Compile & run:
+The addresses `&argc,&argv` permit the implementation to process command-line arguments. The communicator queries return this process's rank and the group size. Every process prints once; output may be interleaved or reordered by the launcher. A plausible order is ranks 2, 0, 1, 3, but none is promised.
+
+`MPI_Finalize` is collective over the relevant connected World-model processes. Complete pending communications first. It does not mean that all ranks' standard-output text will appear neatly sorted, and no further World-model communication may follow it.
+
+<h2 id="running">3. Compilation and placement are separate choices</h2>
 
 ```bash
 mpicc hello.c -o hello
 mpiexec -np 4 ./hello
 ```
 
-Sample output (unordered):
+`mpicc` is a compiler wrapper: it supplies MPI headers and libraries to a configured underlying compiler, which is not necessarily GCC. `mpiexec` requests four processes; scheduler integration, allocation and affinity determine where they run. On a managed cluster, follow the site's launcher and batch-system instructions rather than assuming a login node is an execution resource.
 
-```
-Hello PX457 from rank 2 of 4
-Hello PX457 from rank 0 of 4
-Hello PX457 from rank 1 of 4
-Hello PX457 from rank 3 of 4
-```
+Four ranks on one node are useful for correctness tests. They do not reproduce the network costs of four nodes. A scaling report must state ranks per node, threads per rank, binding and problem partition as well as total process count.
 
----
+### Errors have a policy as well as a return code
 
-## Error Handling
+MPI routines commonly return an integer error code. Many communication errors invoke a default error handler that aborts rather than returning control normally. An application can select `MPI_ERRORS_RETURN` on a communicator and inspect returned codes, but MPI does not guarantee that every erroneous program can recover and continue correctly. Do not treat an unchecked failure as a valid result or assume a returned error repairs inconsistent collective participation.
 
-MPI functions return an integer status code:
+The [Open MPI initialisation documentation](https://docs.open-mpi.org/en/main/man-openmpi/man3/MPI_Init_thread.3.html) distinguishes the World model used here from the newer Sessions model. This course's examples retain the init–work–finalise structure rather than mixing the two.
 
-```c
-int err = MPI_Init(&argc, &argv);
-if (err != MPI_SUCCESS) { /* handle error */ }
-```
+<h2 id="decomposition">4. Ownership comes before communication</h2>
 
-…but by default, MPI aborts on error — explicit checking is often unnecessary.
+For a simple divisible array length $N=Pn$, rank $r$ can own global indices $rn,\ldots,(r+1)n-1$. Every index has one owner, so independent elementwise work requires no communication during the kernel. A stencil is different: the first owned element may need its neighbour from another rank. That value becomes a **halo** or **ghost** value: a local copy of remotely owned data.
 
----
+This is the distributed-memory version of the dependency question in [OpenMP](/notes/px457/openmp-dependencies#dependences). We still draw producer–consumer edges. Now some edges must be implemented by messages.
 
-## Summary
+A decomposition becomes a communication problem exactly where a calculation needs a value owned by another rank. Compare an independent update with a nearest-neighbour stencil on the same partition.
 
-| Step | Function | Purpose |
-| --- | --- | --- |
-| 1 | `MPI_Init(&argc,&argv)` | Start MPI runtime |
-| 2 | `MPI_Comm_size(MPI_COMM_WORLD,&p)` | Query total processes |
-| 3 | `MPI_Comm_rank(MPI_COMM_WORLD,&rank)` | Query this process's ID |
-| 4 | `MPI_Finalize()` | Gracefully shut down |
+<PX457Animation scene="halos" />
 
----
+### Exercises and continuation
 
-## Takeaways for PX457
+1. Modify the hello program so each rank prints its own local `a`, after only rank zero changes its value. Predict the result first.
+2. For $N=12,P=3$, list each rank's indices and the remotely owned values needed by a nearest-neighbour stencil.
+3. Compile and launch with the site's supported commands. Record placement separately from process count.
 
-1. MPI = distributed memory → explicit data transfer required (next lectures).
-2. All MPI codes follow the same *init–work–finalize* skeleton.
-3. **Communicators & ranks** define process topology.
-4. Use `mpiexec -np P` to test scaling on SCRTP cluster.
-5. Prepare to extend this with **point-to-point communication (send/recv)** in Lecture 11.
+[Point-to-point communication](/notes/px457/mpi-point-to-point) supplies the operations that carry a value across an ownership boundary, together with the completion rules that make reusing its buffer safe.

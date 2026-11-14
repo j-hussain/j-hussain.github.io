@@ -1,325 +1,166 @@
 ---
 layout: page
-title: "MPI: MPI Communicators"
+title: "MPI: Communicators and Cartesian Topologies"
 ---
 
-### *MPI-04: MPI Communicators*
+A two-dimensional stencil is local in geometry: each subdomain needs four neighbouring faces. World-rank numbers contain no geometry by themselves. We need both a way to name neighbours and a way to keep a row's collective separate from another row's collective.
 
----
+A communicator answers **who participates and which communication context is used**. A topology adds **logical coordinates and adjacency**. These extend the [rank-local ownership model](/notes/px457/mpi-intro#processes); they do not change its separate memory spaces.
 
-## Conceptual Focus
+<h2 id="contexts">1. A communicator is more than a list of ranks</h2>
 
-MPI scales by **domain decomposition**: each process owns a subdomain of the global problem, and exchanges boundary ("halo") data with neighbours. The lecture's 2D periodic grid sketch shows 4 MPI tasks laid out in a (2×2) grid; each task needs "up/down/left/right" halo values from adjacent ranks.
+An intracommunicator combines an ordered group with a context. Two communicators can contain the same processes yet have independent message matching. A library can therefore communicate internally without accidentally receiving the application's message with the same tag. `MPI_Comm` is an opaque handle: pass it to MPI, do not inspect its representation.
 
-To implement this cleanly you need answers to:
-
-- Where am I in the logical processor grid?
-- Which ranks are my neighbours?
-- How many processes exist along each dimension?
-- How do I structure communication so only the relevant processes participate?
-
-MPI's solution is **communicators**, plus optional **topologies** attached to them.
-
----
-
-## 1) Communicators (what they are and why you care)
-
-### 1.1 Definitions
-
-- A **communicator** is a *context* in which a set of processes can communicate.
-- Default is `MPI_COMM_WORLD` (all processes).
-- In C, communicator handles have type `MPI_Comm` and are **opaque** (you don't inspect internals; you pass them to MPI calls).
-
-Key operational implication:
-
-- **Point-to-point and collective operations only occur within a communicator.**
-- Creating sub-communicators lets you structure complex codes (e.g., row-wise collectives, neighbour exchange groups) without global coordination overhead.
-
----
-
-### 1.2 Splitting a communicator: `MPI_Comm_split`
-
-**Use case:** arrange (P=N²) ranks into an (N×N) logical grid, then create per-row communicators.
+### Split by colour, order by key
 
 ```c
-MPI_Comm_split(existing_comm, split_id, split_key, &split_comm);
+MPI_Comm_split(parent, colour, key, &child);
 ```
 
-Arguments (lecture's terminology):
+All members of `parent` participate. Equal colours form a group; increasing key determines rank order within that group, with parent rank breaking ties. `MPI_UNDEFINED` excludes a process and gives it `MPI_COMM_NULL`.
 
-- `existing_comm`: communicator being split (e.g. `MPI_COMM_WORLD`)
-- `split_id`: "color" (which subgroup this rank belongs to)
-- `split_key`: ordering within the new communicator
-- `split_comm`: output communicator handle for this rank
-
-**Row communicator example:**
+For $P=N^2$ ranks in an explicitly chosen row-major logical arrangement:
 
 ```c
-int world_rank, P;
+/* All ranks have checked that P is a positive perfect square. */
+int N = (int)sqrt((double)P);
+int row = world_rank / N;
 MPI_Comm row_comm;
-
-MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
-MPI_Comm_size(MPI_COMM_WORLD, &P);
-
-int N = (int)(sqrt((double)P));     // assuming perfect square
-int row_id = world_rank / N;        // which row in an N×N grid
-
-MPI_Comm_split(MPI_COMM_WORLD, row_id, world_rank, &row_comm);
-
-/* ... communicate using row_comm ... */
-
+MPI_Comm_split(MPI_COMM_WORLD, row, world_rank, &row_comm);
+/* Row-local rank is world_rank % N for this ordering. */
 MPI_Comm_free(&row_comm);
 ```
 
-The mapping table shows: ranks with the same `row_id` are grouped, and using `world_rank` as the key preserves the intuitive left-to-right ordering inside each row.
-
----
-
-### 1.3 Splitting by hardware locality: `MPI_Comm_split_type`
-
-**Motivation:** processes on the same node share physical memory; intra-node MPI can be much faster than inter-node communication. Creating "shared-memory node" communicators enables hybrid designs (shared-memory optimisations, per-node leaders, etc.).
+Include `math.h`; test `N*N==P` safely rather than silently truncating a nonsquare process count. Rank zero in a row communicator need not be world rank zero. `MPI_Comm_split_type` with `MPI_COMM_TYPE_SHARED` instead forms groups able to create a shared-memory region, commonly node-local groups:
 
 ```c
-MPI_Comm_split_type(MPI_COMM_WORLD,
-                    MPI_COMM_TYPE_SHARED,
-                    split_key, MPI_INFO_NULL,
-                    &node_comm);
+MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED,
+                    world_rank, MPI_INFO_NULL, &node_comm);
 ```
 
-Notes:
+All world ranks call it. This supplies a useful hardware-local grouping without assuming that consecutive world ranks share a node.
 
-- Must be called by all ranks in `MPI_COMM_WORLD`.
-- Some implementations offer vendor-specific split types (e.g., NUMA-aware).
+<h2 id="groups">2. Select an arbitrary ordered subset</h2>
 
----
-
-# 2) Groups and Communicators
-
-## 2.1 What is a group?
-
-A **group** is an ordered set of processes (still opaque). A **communicator** is effectively:
-
-communicator = group + communication context.
-
-Groups allow nontrivial selections like "processes 2, 4, 8, 13 but not 6".
-
-## 2.2 Create a group from `MPI_COMM_WORLD`
+Groups describe membership without creating a communication context:
 
 ```c
-MPI_Group world_grp;
-MPI_Comm_group(MPI_COMM_WORLD, &world_grp);
-```
-
-## 2.3 Include specific ranks: `MPI_Group_incl`
-
-Example in the lecture uses a "column" subset:
-
-```c
-int column[] = {1, 5, 9, 13};
-MPI_Group column_grp;
-MPI_Group_incl(world_grp, 4, column, &column_grp);
-```
-
-Then free groups when done:
-
-```c
-MPI_Group_free(&column_grp);
-MPI_Group_free(&world_grp);
-```
-
-(Freeing matters in long-running codes; `MPI_Finalize` will also clean up.)
-
-## 2.4 Turn a group into a communicator: `MPI_Comm_create`
-
-```c
+MPI_Group world_group, column_group;
 MPI_Comm column_comm;
-MPI_Comm_create(MPI_COMM_WORLD, column_grp, &column_comm);
-```
+int column[] = {1, 5, 9, 13};  /* requires at least 14 world ranks */
+MPI_Comm_group(MPI_COMM_WORLD, &world_group);
+MPI_Group_incl(world_group, 4, column, &column_group);
+MPI_Comm_create(MPI_COMM_WORLD, column_group, &column_comm);
 
-Important behaviour: ranks not in the group get `MPI_COMM_NULL`.
-
-So you must guard communicator usage:
-
-```c
 if (column_comm != MPI_COMM_NULL) {
-    /* safe to call collectives/pt2pt on column_comm */
+    /* Collective operations here involve just the four selected ranks. */
     MPI_Comm_free(&column_comm);
 }
+MPI_Group_free(&column_group);
+MPI_Group_free(&world_group);
 ```
 
-The lecture's example broadcasts within `column_comm`, which corresponds to world ranks (1 → 5,9,13).
+`MPI_Comm_create` is collective over the parent communicator; all its members must call it with consistent group information for this example. Excluded ranks receive `MPI_COMM_NULL` and must not use that as a communicator. In the new ordering, world rank 1 is local rank 0; a broadcast rooted there uses `root=0`, not `root=1`. Free groups and communicators once no longer needed.
 
----
+<h2 id="cartesian">3. Attach the geometry to the rank space</h2>
 
-# 3) Topologies
-
-## 3.1 What a topology gives you
-
-A topology attaches a logical addressing scheme to a communicator so ranks can answer:
-
-- "What are my coordinates?"
-- "Who are my neighbours?"
-    This is **virtual** (not necessarily the physical interconnect).
-
-This lecture focuses on **Cartesian (grid) topologies**.
-
----
-
-## 3.2 Create a 2D Cartesian topology: `MPI_Cart_create`
-
-For N=4, P=16:
+For sixteen ranks, create a periodic four-by-four topology:
 
 ```c
-int dims[2]   = {4, 4};
-int wrap[2]   = {1, 1};   // periodic in both dimensions
-int reorder   = 1;        // MPI may reorder ranks for performance
-
-MPI_Comm cart_comm;
-MPI_Cart_create(MPI_COMM_WORLD, 2, dims, wrap, reorder, &cart_comm);
+int dims[2] = {4, 4};
+int periods[2] = {1, 1};
+MPI_Comm cart;
+MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 1, &cart);
+int rank, coords[2];
+MPI_Comm_rank(cart, &rank);
+MPI_Cart_coords(cart, rank, 2, coords);
 ```
 
-Meaning:
+The final `1` permits reordering for placement; it does not guarantee that a particular physical mapping is used. If fewer processes are included than exist in the parent, excluded ranks get `MPI_COMM_NULL`; guard usage. The fixed example assumes exactly sixteen ranks.
 
-- `dims[d]`: number of processes along dimension (d).
-- `wrap[d]=1`: periodic boundaries (torus); `0`: nonperiodic.
-- `reorder=1`: MPI can remap ranks in `cart_comm` to better match hardware.
+`MPI_Cart_rank(cart, coords, &rank)` is the inverse query. Cartesian ranks use row-major coordinate ordering, but **world ranks may differ after reordering**. Always query ranks in the communicator actually used by the communication.
 
----
+<Figure id="px457-cartesian" title="Neighbourhood is geometric, rank is contextual" caption="A 4×4 Cartesian communicator in its own rank order. Rank 9 has coordinates (2,1): neighbours 5 and 13 in dimension 0, 8 and 10 in dimension 1. These are Cartesian ranks; do not substitute world ranks when reordering was allowed. Periodicity connects opposite edges, omitted here for clarity.">
+<svg viewBox="0 0 360 225" role="img" aria-label="Four by four grid with Cartesian rank 9 at row 2 column 1 highlighted and connected to ranks 5, 13, 8 and 10" style={{width: "100%", height: "auto"}}>
+<g fill="none" stroke="currentColor"><path d="M65 25H285V201H65Z M65 69H285 M65 113H285 M65 157H285 M120 25V201 M175 25V201 M230 25V201"/><path d="M147 91V179 M92 135H202" stroke="var(--sci-accent)" strokeWidth="3"/></g>
+<rect x="121" y="114" width="53" height="42" fill="var(--sci-accent)" fillOpacity="0.2"/>
+<g fill="currentColor" fontSize="14" textAnchor="middle"><text x="92" y="52">0</text><text x="147" y="52">1</text><text x="202" y="52">2</text><text x="257" y="52">3</text><text x="92" y="96">4</text><text x="147" y="96">5</text><text x="202" y="96">6</text><text x="257" y="96">7</text><text x="92" y="140">8</text><text x="147" y="140">9</text><text x="202" y="140">10</text><text x="257" y="140">11</text><text x="92" y="184">12</text><text x="147" y="184">13</text><text x="202" y="184">14</text><text x="257" y="184">15</text></g>
+</svg>
+</Figure>
 
-## 3.3 Rank ↔ coordinates: `MPI_Cart_coords` and `MPI_Cart_rank`
+The Cartesian layout names positions, while a world rank names a process in a different communicator. Follow the same highlighted process through a possible reordering and a row-local naming scheme.
 
-```c
-int cart_rank, coords[2];
-MPI_Comm_rank(cart_comm, &cart_rank);
-MPI_Cart_coords(cart_comm, cart_rank, 2, coords);
-```
+<PX457Animation scene="topology" />
 
-Inverse:
-
-```c
-MPI_Cart_rank(cart_comm, coords, &cart_rank);
-```
-
-The lecture notes that ranks in `cart_comm` are row-major in the conceptual grid.
-
----
-
-## 3.4 Neighbours: `MPI_Cart_shift`
-
-This is the workhorse for halo exchange patterns.
+### Query the neighbours, then exchange
 
 ```c
 int src, dst;
-MPI_Cart_shift(cart_comm, dir, 1, &src, &dst);
+MPI_Cart_shift(cart, 0, 1, &src, &dst);
+MPI_Sendrecv(send_face, n, MPI_DOUBLE, dst, 10,
+             recv_face, n, MPI_DOUBLE, src, 10,
+             cart, MPI_STATUS_IGNORE);
 ```
 
-- `dir`: which dimension (0..ndims-1)
-- `shift=1`: immediate neighbour
-- returns neighbour ranks `src` (negative direction) and `dst` (positive direction)
+Direction zero and displacement one give the negative-direction source and positive-direction destination. Dimension one gives left/right neighbours in the pictured convention. A negative displacement reverses the roles. Nonperiodic boundaries return `MPI_PROC_NULL`: sends and receives with it complete as no-ops, and a receive leaves the buffer unchanged. You must therefore initialise physical-boundary ghost values; MPI does not supply the boundary condition.
 
-Examples in the lecture:
+In a periodic two-by-two grid, positive and negative neighbours along a dimension are the same rank. Keep face buffers and tags/directional exchange conventions distinct so two different halos are not confused.
 
-- For process 9 in a (4×4) grid, shifting in `dir=0` by 1 gives `src=5`, `dst=13`.
-- Shifting in `dir=1` by 1 gives `src=8`, `dst=10`.
-- Negative shifts behave as expected (swap directions).
-- On a boundary with **non-periodic** wrap, a neighbour may be `MPI_PROC_NULL`. Sending to / receiving from `MPI_PROC_NULL` is defined as a no-op, which simplifies edge handling.
-
-Practical pairing:
-
-- `MPI_Cart_shift` is commonly used to set up safe neighbour exchanges via `MPI_Sendrecv` (from Lecture 11).
-
----
-
-## 3.5 Grid slicing: `MPI_Cart_sub`
-
-This is the Cartesian-topology analogue of `MPI_Comm_split`, used to build row/column communicators for collectives.
+### Slice a grid into rows or columns
 
 ```c
-int remain_dims[2] = {0, 1};  // keep dim 1 (columns vary) => row slices
-MPI_Comm row_comm;
-MPI_Cart_sub(cart_comm, remain_dims, &row_comm);
-
-int remain_dims2[2] = {1, 0}; // keep dim 0 => column slices
-MPI_Comm col_comm;
-MPI_Cart_sub(cart_comm, remain_dims2, &col_comm);
+int keep_row[2] = {0, 1}; /* let column coordinate vary */
+int keep_col[2] = {1, 0}; /* let row coordinate vary */
+MPI_Cart_sub(cart, keep_row, &row_comm);
+MPI_Cart_sub(cart, keep_col, &col_comm);
 ```
 
-The diagram/table shows how `cart_comm` ranks map into `row_comm` (each row has ranks 0..3 locally) and `col_comm` (each column has ranks 0..3 locally).
+A row reduction then calls `MPI_Allreduce` on `row_comm`, not `cart`. All Cartesian processes participate in forming their subcommunicators, then each slice communicates independently. To reproduce the same groups with `MPI_Comm_split`, use **Cartesian coordinates** for colour/key; world-rank arithmetic is insufficient if ranks were reordered.
 
----
+<h2 id="geometry">4. Surface-to-volume ratio predicts a scaling limit</h2>
 
-# 4) Architecture of Collective Communications
+A square local subdomain of side $\ell$ contains $\ell^2$ points. A width-one four-face halo transfers approximately $4\ell$ values, ignoring corners. Hence
 
-## 4.1 Why discuss it?
+$$
+\frac{\text{halo size}}{\text{local work size}}\approx\frac4\ell.
+$$
 
-MPI collectives are "built-in and optimised", but understanding typical implementations helps you reason about:
+For a fixed global square with $N$ points along each side and a square process grid, $\ell=N/\sqrt P$. The ratio grows as $4\sqrt P/N$. Adding processes shrinks useful local work faster than boundary traffic: one reason strong scaling eventually degrades. This is a geometric count, before latency and network contention are included.
 
-- latency vs bandwidth regimes,
-- algorithmic step counts,
-- and when you may need custom communication patterns.
+<h2 id="collective-cost">5. A topology suggests algorithms, not one guaranteed implementation</h2>
 
-## 4.2 Broadcast / reduce structures
+Use a simple message model
 
-The lecture sketches three patterns:
+$$
+T_{\mathrm{message}}(m)=\alpha+\beta m,
+$$
 
-1. **Simple loop** (root sends to each rank): (P-1) steps
-2. **Ring pass**: still (P-1) steps, but structured
-3. **Tree/graph**: (log₂ P) steps
+where $m$ is bytes, $\alpha$ startup latency and $\beta$ seconds per byte. It excludes congestion and overlap. A root-to-all loop or serial ring propagation needs $P-1$ stages; a binomial tree can broadcast in $\lceil\log_2P\rceil$ stages, with different link loads.
 
----
+For an allreduce of $m$ bytes per rank, a chunked ring has a reduce-scatter phase of $P-1$ rounds and an allgather phase of $P-1$ rounds. Ignoring local reduction cost,
 
-## 4.3 Ring-pass allreduce (chunked, pipelined)
+$$
+T_{\mathrm{ring}}\approx2(P-1)\alpha+
+                         2\frac{P-1}{P}\beta m.
+$$
 
-A ring can implement allreduce by splitting data into (P) chunks to pipeline communication.
+For $P=2^k$, recursive doubling exchanges partial results with partner `rank ^ (1<<j)` at stage $j$. A full-buffer allreduce can take $k$ exchanges for scalars **or arrays**, approximately $k(\alpha+\beta m)$ plus local reduction work. A reduce-then-broadcast tree takes about $2k$ stages; the source's “arrays require $2k$” refers to such a choice, not an intrinsic array requirement.
 
-Mechanics:
+Fewer startup rounds favour small messages. Less total per-rank transferred data can favour bandwidth-oriented algorithms for large messages. Logical ring adjacency does not guarantee physical proximity. MPI libraries choose among implementations; measure the library's `MPI_Allreduce` before writing a custom replacement.
 
-- Each rank knows its ring neighbours via `MPI_Cart_shift(cart_comm, dir, 1, &src, &dst)`.
-- Over (P-1) rounds, chunks circulate and partial reductions accumulate.
-- Then another (P-1) rounds distribute the fully reduced chunks, giving total (2(P-1)) passes for full allreduce.
+The formulas count different kinds of rounds. Follow the recursive-doubling partners, then compare the two phases of a chunked ring. The ring view tracks chunk traffic and phase, rather than pretending each chunk is a full rank-local sum.
 
-Key idea:
+<PX457Animation scene="allreduce" />
 
-- Good for **large data** because it pipelines bandwidth and tends to use "nearby" links in the logical topology.
+### Exercises and continuation
 
----
+1. For sixteen ranks, tabulate world rank, Cartesian rank, coordinates and row-local rank. Repeat with reordering permitted; do not assume the implementation must reorder.
+2. Verify rank 9's neighbours and periodic boundary neighbours via queries. Explain what `MPI_PROC_NULL` does **not** initialise.
+3. Compare row communicators formed with Cartesian splitting and coordinate-based `Comm_split`.
+4. Compare ring and recursive-doubling cost models as $m$ grows. Which omitted effects might reverse their prediction?
 
-## 4.4 Butterfly (hypercube) allreduce
+We can now identify the exact remote values needed by a stencil. [Advanced MPI](/notes/px457/mpi-advanced) asks how to compute its interior while those values are being transferred.
 
-For P=2^N processes, butterfly reduces a scalar in N steps (and arrays in 2N steps as per lecture) by exchanging with a partner that differs in one bit of the rank each stage.
+### References
 
-The hypercube mapping slide explicitly motivates converting ranks to binary so pairing is "flip bit (k)".
-
-Key idea:
-
-- Fewer rounds than ring → good when **latency dominates** (small messages, many ranks).
-
----
-
-## 4.5 Latency vs bandwidth trade-off
-
-The final slide states the practical performance heuristic:
-
-- **Butterfly:** fewer messages/rounds → best for small data (minimise latency).
-- **Ring-pass:** more rounds but predictable/pipelined transfers → best for large data (maximise bandwidth).
-    MPI libraries typically choose internally at runtime for `MPI_Allreduce` based on message size and process count.
-
----
-
-## Summary
-
-- **Communicators** define who can communicate; they structure complex MPI programs beyond `MPI_COMM_WORLD`.
-- `MPI_Comm_split` partitions a communicator using a color/key mechanism; `MPI_Comm_split_type` can split by hardware locality (e.g., shared-memory nodes).
-- **Groups** allow arbitrary subsets; to communicate you must create a communicator, and excluded ranks receive `MPI_COMM_NULL` (must guard).
-- **Cartesian topologies** (`MPI_Cart_create`) let you compute coordinates and neighbours cleanly (`MPI_Cart_shift`) and slice communicators for row/column collectives (`MPI_Cart_sub`).
-- Collective operations can be implemented with **loop**, **ring**, or **tree/butterfly** patterns; performance depends on latency vs bandwidth regime.
-
----
-
-## PX457 Implementation Checklist (C)
-
-1. Assume (P=N²). Build `cart_comm` with periodic boundaries and query each rank's `(i,j)` coordinates using `MPI_Cart_coords`.
-2. Use `MPI_Cart_shift` to compute four neighbours; implement halo exchange with `MPI_Sendrecv` and handle edges via `MPI_PROC_NULL` if nonperiodic.
-3. Use `MPI_Cart_sub` to create `row_comm` and run `MPI_Allreduce` per row; verify only row ranks participate.
-4. Recreate "row communicator" using `MPI_Comm_split` and confirm it matches the `MPI_Cart_sub` result.
-5. Micro-benchmark `MPI_Allreduce` on small vs large buffers; interpret results using the lecture's butterfly-vs-ring latency/bandwidth discussion.
+[MPI standard documents](https://www.mpi-forum.org/docs/) for communicator, group and topology semantics; [point-to-point ordering](https://www.mpi-forum.org/docs/mpi-4.1/mpi41-report/node68.htm) for matching and buffering constraints.
