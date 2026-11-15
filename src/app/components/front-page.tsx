@@ -7,6 +7,7 @@ import type { PondStats } from "./koi-pond/koi-pond";
 const SOCIALS = [
     { label: "github", href: "https://github.com/j-hussain" },
     { label: "linkedin", href: "https://www.linkedin.com/in/jabir-hussain/" },
+    { label: "x", href: "https://x.com/jabstec" },
 ];
 
 const UNDERLINE =
